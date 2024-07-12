@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
+from typing import Optional
 from utils.validate_jwt import jwt_dependecy
 from config.db import con
 
@@ -21,7 +22,7 @@ async def get_products(jwt_dependency: jwt_dependecy):
         raise HTTPException(status_code=401, detail='Authentication failed')
 
 @product_route.get("/stock", status_code=200)
-async def get_stock_by_publisher(jwt_dependency: jwt_dependecy, Publisher: str = None):
+async def get_stock_by_publisher(jwt_dependency: jwt_dependecy, Publisher: Optional[str] = None):
     if not(jwt_dependency):
         raise HTTPException(
             status_code=498,
