@@ -18,8 +18,6 @@ router = APIRouter(
     tags=['auth']
 )
 
-users_list = [{"id": 1, "username": "admin01", "hashed_password": "$2y$10$.71JpHineRKnVBwDAOwChejgBHCBbf3xAhTgN6zMweXrl/p6C.iw2"}, {"id": 2, "username": "admin02", "hashed_password": "$2y$10$gQwj4t0PIs8PbiQeWVVbV.w7ADf/U0jPKptcFmZ615yqrFsxhDWOC"}]
-
 TOKEN_SECONDS_EXPIRATION = 1800
 ALGORITHM = 'HS256'
 
