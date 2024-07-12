@@ -2,8 +2,8 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from jose import jwt, JWTError
+from config.db import SECRET_KEY
 
-SECRET_KEY = 'a40bd8c1de406be2c0398f960f74b3e3a127c4ad4b1a637b0be6e4542df8f634'
 ALGORITHM = 'HS256'
 
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl='auth/token')
