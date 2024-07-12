@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from utils.validate_jwt import jwt_dependecy
 from models.user import User
-from config.db import con
+from config.db import con, SECRET_KEY
 
 user_route = APIRouter(
     prefix = '/user',
@@ -17,7 +17,7 @@ def get_users(jwt_dependency: jwt_dependecy):
     if not(jwt_dependency):
         raise HTTPException(
             status_code=498,
-            detail='Invalid Access Token',
+            detail=f'Invalid Access Token, secret_key {SECRET_KEY}',
         )
     else:
         # dataUsr = con.execute(select(User.c.user).where((User.c.user == data_user["user"]))).first()
