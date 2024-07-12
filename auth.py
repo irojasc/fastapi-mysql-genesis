@@ -35,7 +35,6 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
-
 # @router.post("/", status_code=status.HTTP_201_CREATED)
 # async def create_user(create_user_request: CreateUserRequest):
 #     pass
