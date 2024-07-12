@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta, datetime
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,7 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError
 from utils.dictionary2obj import dict2obj
 from models.user import User
-from config.db import con
+from config.db import con, SECRET_KEY
 from sqlalchemy import select
 
 router = APIRouter(
@@ -19,9 +20,8 @@ router = APIRouter(
 
 users_list = [{"id": 1, "username": "admin01", "hashed_password": "$2y$10$.71JpHineRKnVBwDAOwChejgBHCBbf3xAhTgN6zMweXrl/p6C.iw2"}, {"id": 2, "username": "admin02", "hashed_password": "$2y$10$gQwj4t0PIs8PbiQeWVVbV.w7ADf/U0jPKptcFmZ615yqrFsxhDWOC"}]
 
-SECRET_KEY = 'a40bd8c1de406be2c0398f960f74b3e3a127c4ad4b1a637b0be6e4542df8f634'
+TOKEN_SECONDS_EXPIRATION = 1800
 ALGORITHM = 'HS256'
-TOKEN_SECONDS_EXPIRATION = 1200
 
 bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl='auth/token')

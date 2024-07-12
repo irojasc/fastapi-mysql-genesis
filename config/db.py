@@ -10,8 +10,7 @@ engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
     )
 meta = MetaData()
 con = engine.connect()
-
-
+SECRET_KEY = os.getenv("SECRET_KEY", default=None)
 
 # from decouple import Config, RepositoryEnv
 # DOTENV_FILE = './.env'
