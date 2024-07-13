@@ -35,8 +35,10 @@ async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
         )
     else:
         if bool(Isbn) or bool(Title) or bool(Autor) or bool(Publisher):
-            query = "wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, if(exp(sum(ln(wp.isEnabled))) is not NULL, 1, 0) as enabled, sum(wp.qtyNew) as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where pr.isbn like '%{}%' and pr.title like '%{}%' and pr.autor like '%{}%' and pr.publisher like '%{}%' group by  wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew order by wp.idProduct asc;".format(Isbn.upper(), Title.upper(), Autor.upper(), Publisher.upper())
-            # query = "wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, if(exp(sum(ln(wp.isEnabled))) is not NULL, 1, 0) as enabled, sum(wp.qtyNew) as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where pr.publisher like '%{}%' and  group by  wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew order by wp.idProduct asc;".format(Publisher.upper())
+            if bool(Isbn):
+                query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where pr.isbn like '%{Isbn.upper()}%' and pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
+            else:
+                query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
             stock = con.execute(select(text(query)))
             data = stock.fetchall()
             print(data)
@@ -50,12 +52,12 @@ async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
                         "title": item[2],
                         "autor": item[3],
                         "publisher": item[4],
-                        "isEnabled": bool(item[7]),
+                        "isEnabled": item[7] != b'\x00',
                         "stock": int(item[8]),
                         "pv": {item[5]: item[6]}
                     })
                 else:
-                    result[_index]["isEnabled"] = result[_index]["isEnabled"] or bool(item[7])
+                    result[_index]["isEnabled"] = result[_index]["isEnabled"] or (item[7] != b'\x00')
                     result[_index]["stock"] = result[_index]["stock"] + int(item[8])
                     result[_index]["pv"][item[5]] = item[6]
        
