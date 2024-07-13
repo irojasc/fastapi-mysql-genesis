@@ -12,6 +12,10 @@ product_route = APIRouter(
 
 product_list = [{"id": 1, "title": "candado"}, {"id": 2, "title": "tranca"}]
 
+def get_isbn_isExists(isbn):
+    return f"pr.isbn like '%{isbn.upper()}%' and " if bool(isbn) else " "
+
+
 @product_route.get("/", status_code=200)
 async def get_products(jwt_dependency: jwt_dependecy):
     if jwt_dependency:
@@ -35,13 +39,9 @@ async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
         )
     else:
         if bool(Isbn) or bool(Title) or bool(Autor) or bool(Publisher):
-            if bool(Isbn):
-                query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where pr.isbn like '%{Isbn.upper()}%' and pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
-            else:
-                query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
+            query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where {get_isbn_isExists(Isbn)} pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
             stock = con.execute(select(text(query)))
             data = stock.fetchall()
-            print(data)
             result = []
             for item in data:
                 _index = next((index for (index, d) in enumerate(result) if d["id"] == item[0]), None)
