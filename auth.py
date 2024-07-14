@@ -8,6 +8,7 @@ from starlette import status
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError
+from sqlalchemy.exc import OperationalError
 from utils.dictionary2obj import dict2obj
 from models.user import User
 from config.db import con, SECRET_KEY
@@ -57,13 +58,18 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 
 def authenticate_user(username: str, password:str):
     try:
-        (id, usr, pw) = con.execute(select(User.c.id, User.c.user, User.c.pw).where((User.c.user == username))).first()
+        response = con.execute(select(User.c.id, User.c.user, User.c.pw).where((User.c.user == username))).first()
+        print("aquiiiiii ", response)
+        (id, usr, pw)  = response
+        print("#############",id, usr, pw)
         if not usr:
             return False
         else:
             if bool(bcrypt_context.verify(password, pw)):
                 return dict2obj({"id": id, "usr": usr})
-    except:
+    except OperationalError as err:
+    # except:
+        print("falla esta lectura ", err)
         return False
 
 def create_access_token(user_id: int, username: str, expires_delta: timedelta):
