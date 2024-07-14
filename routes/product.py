@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
-from config.db import con
+from config.db import con, session
 
 product_route = APIRouter(
     prefix = '/product',
@@ -38,35 +38,55 @@ async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
             detail='Invalid Access Token',
         )
     else:
-        if bool(Isbn) or bool(Title) or bool(Autor) or bool(Publisher):
-            query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where {get_isbn_isExists(Isbn)} pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
-            stock = con.execute(select(text(query)))
-            data = stock.fetchall()
-            result = []
-            for item in data:
-                _index = next((index for (index, d) in enumerate(result) if d["id"] == item[0]), None)
-                if _index is None:
-                    result.append({
-                        "id": item[0],
-                        "isbn": item[1],
-                        "title": item[2],
-                        "autor": item[3],
-                        "publisher": item[4],
-                        "isEnabled": item[7] != b'\x00',
-                        "stock": int(item[8]),
-                        "pv": {item[5]: item[6]}
-                    })
-                else:
-                    result[_index]["isEnabled"] = result[_index]["isEnabled"] or (item[7] != b'\x00')
-                    result[_index]["stock"] = result[_index]["stock"] + int(item[8])
-                    result[_index]["pv"][item[5]] = item[6]
-       
-            return JSONResponse(
-            status_code=200,
-            content={"result": result}
-            )
-        else:
-            raise HTTPException(status_code=404, detail='Nothing to show you')
+        status = False
+        result = []
+        try:
+            if bool(Isbn) or bool(Title) or bool(Autor) or bool(Publisher):
+                query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where {get_isbn_isExists(Isbn)} pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
+                # stock = con.execute(select(text(query)))
+                stock = session.execute(select(text(query)))
+                data = stock.fetchall()
+                # result = []
+                for item in data:
+                    _index = next((index for (index, d) in enumerate(result) if d["id"] == item[0]), None)
+                    if _index is None:
+                        result.append({
+                            "id": item[0],
+                            "isbn": item[1],
+                            "title": item[2],
+                            "autor": item[3],
+                            "publisher": item[4],
+                            "isEnabled": item[7] != b'\x00',
+                            "stock": int(item[8]),
+                            "pv": {item[5]: item[6]}
+                        })
+                    else:
+                        result[_index]["isEnabled"] = result[_index]["isEnabled"] or (item[7] != b'\x00')
+                        result[_index]["stock"] = result[_index]["stock"] + int(item[8])
+                        result[_index]["pv"][item[5]] = item[6]
+        
+                status = True
+                # return JSONResponse(
+                # status_code=200,
+                # content={"result": result}
+                # )
+            else:
+                raise HTTPException(status_code=404, detail='Nothing to show you')
+        except:
+            session.rollback()
+            # raise HTTPException(status_code=404, detail='Nothing to show you')
+            # raise
+        finally:
+            session.close()
+            if not status:
+                raise HTTPException(status_code=404, detail='Nothing to show you')
+            elif status:
+                return JSONResponse(
+                status_code=200,
+                content={"result": result}
+                )
+
+
 
     # if jwt_dependency:
     #     return {

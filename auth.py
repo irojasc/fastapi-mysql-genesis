@@ -11,7 +11,7 @@ from jose import jwt, JWTError
 from sqlalchemy.exc import OperationalError
 from utils.dictionary2obj import dict2obj
 from models.user import User
-from config.db import con, SECRET_KEY
+from config.db import con, session, SECRET_KEY
 from sqlalchemy import select
 
 router = APIRouter(
@@ -50,27 +50,33 @@ class Token(BaseModel):
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not authorized')
+        # raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not authorized')
+        raise HTTPException(status_code=401, detail='User not authorized')
     
     token = create_access_token(user.id, user.usr, timedelta(seconds=TOKEN_SECONDS_EXPIRATION))
     return {'userId': user.id, 'userName': user.usr, 'access_token': token, 'token_type': 'bearer'}
 
 
 def authenticate_user(username: str, password:str):
+    Response = False
     try:
-        response = con.execute(select(User.c.id, User.c.user, User.c.pw).where((User.c.user == username))).first()
-        print("aquiiiiii ", response)
-        (id, usr, pw)  = response
-        print("#############",id, usr, pw)
+        # response = con.execute(select(User.c.id, User.c.user, User.c.pw).where((User.c.user == username))).first()
+        response = session.execute(select(User.c.id, User.c.user, User.c.pw).where((User.c.user == username))).first()
+        # session.commit()
+        (id, usr, pw)  =  (response if response is not None else (None, None, None))
         if not usr:
-            return False
+            Response = False
         else:
             if bool(bcrypt_context.verify(password, pw)):
-                return dict2obj({"id": id, "usr": usr})
-    except OperationalError as err:
-    # except:
-        print("falla esta lectura ", err)
-        return False
+                Response = dict2obj({"id": id, "usr": usr})
+    except:
+        session.rollback()
+        Response = False
+        # raise
+        # return False
+    finally:
+        session.close()
+        return Response
 
 def create_access_token(user_id: int, username: str, expires_delta: timedelta):
     encode = {'id': user_id, 'username': username}
