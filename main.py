@@ -1,5 +1,6 @@
 from fastapi import FastAPI, status, Depends
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import auth
 from routes.product import product_route
 from routes.user import user_route
@@ -11,6 +12,16 @@ app = FastAPI(
     title="GENESIS API",
     swagger_ui_parameters={"defaultModelsExpandDepth": -1},
     openapi_url='/json'
+)
+
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth.router)
