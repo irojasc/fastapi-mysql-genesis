@@ -104,7 +104,7 @@ async def get_price_by_ware_house(
                 status = False
             else:
                 status = True
-                result = {"productDetail": f"{title} - {autor} - {publisher}",
+                result = {"productDetail": f"{title.replace('ñ','n').replace('¡', '!')} - {autor.replace('ñ','n').replace('¡', '!')} - {publisher.replace('ñ','n').replace('¡', '!')}",
                           "productPrice": f"{str(pvNew)}"}
         else:
             raise HTTPException(status_code=404, detail='Nothing to show you')
