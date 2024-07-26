@@ -95,8 +95,7 @@ async def get_price_by_ware_house(
     result = (None, None)
     try:
         if bool(idWare) or bool(isbn):
-            print("Si entra aqui")
-            query = f"p.title, p.autor, p.publisher, wp.pvNew from ware_product wp inner join genesisDB.product p on p.id = wp.idProduct where isbn like '%{isbn}%' and idWare={str(idWare)};"
+            query = f"p.title, p.autor, p.publisher, wp.pvNew from ware_product wp inner join genesisDB.product p on p.id = wp.idProduct where isbn like '%{isbn}%' and idWare={str(idWare)} and isEnabled = True;"
             productPrice = session.execute(select(text(query)))
             data = productPrice.fetchall()
             (title, autor, publisher, pvNew) = ((data[0][0], data[0][1], data[0][2], data[0][3]) if ((data is not None) and (len(data) == 1)) else (None, None, None, None))
