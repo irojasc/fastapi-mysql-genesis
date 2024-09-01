@@ -1,12 +1,13 @@
-from fastapi import FastAPI, status, Depends
+import os
+import uvicorn
+from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import auth
-from routes.product import product_route
+from routes.auth import auth_route
 from routes.user import user_route
+from routes.product import product_route
 from routes.warehouse import warehouse_route
-import uvicorn
-import os
+from routes.company import company_route
 
 app = FastAPI(
     title="GENESIS API",
@@ -14,18 +15,17 @@ app = FastAPI(
     openapi_url='/json'
 )
 
-origins = ["*"]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
     allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
+app.include_router(auth_route)
 app.include_router(user_route)
+app.include_router(company_route)
 app.include_router(product_route)
 app.include_router(warehouse_route)
 

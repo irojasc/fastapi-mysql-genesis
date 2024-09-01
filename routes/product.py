@@ -4,26 +4,27 @@ from sqlalchemy import select, text
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session
+from sqlmodel.product import Product
+from functions.product import get_all_publishers
 
 product_route = APIRouter(
     prefix = '/product',
     tags=['Product']
 )
 
-product_list = [{"id": 1, "title": "candado"}, {"id": 2, "title": "tranca"}]
-
 def get_isbn_isExists(isbn):
     return f"pr.isbn like '%{isbn.upper()}%' and " if bool(isbn) else " "
 
 
 @product_route.get("/", status_code=200)
-async def get_products(jwt_dependency: jwt_dependecy):
+async def get_all_products(jwt_dependency: jwt_dependecy):
     if jwt_dependency:
         return {
-            "content": product_list
+            "content": []
         }
     else:
         raise HTTPException(status_code=401, detail='Authentication failed')
+
 
 @product_route.get("/stock", status_code=200)
 async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
@@ -85,6 +86,17 @@ async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
                 status_code=200,
                 content={"result": result}
                 )
+            
+@product_route.get("/publisher", status_code=200)
+async def Get_All_Publishers(jwt_dependency: jwt_dependecy):
+    try:
+        results = session.query(Product.c.publisher).distinct().all()
+        returned = list(map(get_all_publishers,enumerate(results)))
+        return returned
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+        return []
+            
 
 @product_route.get("/price", status_code=200)
 async def get_price_by_ware_house(

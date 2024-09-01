@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from utils.validate_jwt import jwt_dependecy
-from models.warehouse import WareHouse
-from models.wareset import WareSet
+from sqlmodel.warehouse import WareHouse
+from sqlmodel.wareset import WareSet
 from config.db import con
 
 warehouse_route = APIRouter(

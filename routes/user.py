@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from utils.validate_jwt import jwt_dependecy
-from models.user import User
+from sqlmodel.user import User
 from config.db import con
 
 user_route = APIRouter(

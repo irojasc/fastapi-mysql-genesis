@@ -1,12 +1,13 @@
+import os
 from fastapi.security import OAuth2PasswordBearer
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Depends
 from typing import Annotated
 from jose import jwt, JWTError
 from config.db import SECRET_KEY
 
-ALGORITHM = 'HS256'
+ALGORITHM = os.getenv("ALGORITHM_KEY", default=None)
+oauth2_bearer = OAuth2PasswordBearer(tokenUrl='Login/token')
 
-oauth2_bearer = OAuth2PasswordBearer(tokenUrl='auth/token')
 async def get_jwt_validation(token: Annotated[str, Depends(oauth2_bearer)]):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

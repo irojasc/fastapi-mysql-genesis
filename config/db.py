@@ -16,6 +16,7 @@ session = Session()
 meta = MetaData()
 con = engine.connect()
 SECRET_KEY = os.getenv("SECRET_KEY", default=None)
+ALGORITHM = os.getenv("ALGORITHM_KEY", default=None)
 
 # from decouple import Config, RepositoryEnv
 # DOTENV_FILE = './.env'
