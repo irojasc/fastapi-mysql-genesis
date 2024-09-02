@@ -14,22 +14,31 @@ company_route = APIRouter(
 
 @company_route.get("/", status_code=200)
 async def Get_All_Companies(jwt_dependency: jwt_dependecy):
-    # stmt = select(Company)
+    returned = []
     try:
         results = session.query(Company).all()
         returned = list(map(get_all_companies,results))
-        return returned
     except Exception as e:
+        session.rollback()
         print(f"An error ocurred: {e}")
+        return []
+    finally:
+        session.close()
+        return returned
 
 
 
 @company_route.get("/supplier", status_code=200)
 async def Get_All_Suppliers(jwt_dependency: jwt_dependecy):
+    returned = []
     try:
         results = session.query(Company).where(Company.c.type == 'S').all()
         returned = list(map(get_all_companies,results))
-        return returned
     except Exception as e:
+        print("rollback")
+        session.rollback()
         print(f"An error ocurred: {e}")
-        return []
+        returned = []
+    finally:
+        session.close()
+        return returned

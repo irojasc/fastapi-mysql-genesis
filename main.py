@@ -8,6 +8,8 @@ from routes.user import user_route
 from routes.product import product_route
 from routes.warehouse import warehouse_route
 from routes.company import company_route
+from routes.linker import linker_route
+
 
 app = FastAPI(
     title="GENESIS API",
@@ -26,6 +28,7 @@ app.add_middleware(
 app.include_router(auth_route)
 app.include_router(user_route)
 app.include_router(company_route)
+app.include_router(linker_route)
 app.include_router(product_route)
 app.include_router(warehouse_route)
 

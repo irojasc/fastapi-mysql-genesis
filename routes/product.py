@@ -89,13 +89,18 @@ async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
             
 @product_route.get("/publisher", status_code=200)
 async def Get_All_Publishers(jwt_dependency: jwt_dependecy):
+    returned = []
     try:
         results = session.query(Product.c.publisher).distinct().all()
         returned = list(map(get_all_publishers,enumerate(results)))
-        return returned
     except Exception as e:
+        print("rollback")
+        session.rollback()
         print(f"An error ocurred: {e}")
-        return []
+        returned = []
+    finally:
+        session.close()
+        return returned
             
 
 @product_route.get("/price", status_code=200)

@@ -8,7 +8,7 @@ engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
     os.getenv("DB_PORT", default=None),
     os.getenv("DB_DATABASE", default=None),
         ),
-    pool_pre_ping= True
+    pool_pre_ping= True,
     #lo de arriba para conocer el background de sql
     )
 Session = sessionmaker(bind=engine)
