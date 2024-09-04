@@ -11,7 +11,7 @@ engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
     pool_pre_ping= True,
     #lo de arriba para conocer el background de sql
     )
-Session = sessionmaker(bind=engine)
+Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 session = Session()
 meta = MetaData()
 con = engine.connect()
