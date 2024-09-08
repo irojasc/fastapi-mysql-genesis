@@ -25,7 +25,7 @@ async def Get_All_NoPair_publisher(jwt_dependency: jwt_dependecy):
     except Exception as e:
         print("rollback")
         session.rollback()
-        print(f"An error ocurred: {e}")
+        print(f"companypublisher/nopair:get:An error ocurred: {e}")
         return []
     finally:
         session.close()
@@ -40,7 +40,7 @@ async def Get_All_Pair_publisher(jwt_dependency: jwt_dependecy):
     except Exception as e:
         print("rollback")
         session.rollback()
-        print(f"An error ocurred: {e}")
+        print(f"(companypublisher/pair:get):An error ocurred: {e}")
         return []
     finally:
         session.close()
@@ -57,7 +57,8 @@ async def post_pairs_company_publisher(linker: linker_list, jwt_dependency: jwt_
     except Exception as e:
         print("rollback")
         session.rollback()
-        print(f"An error ocurred: {e}")
+        print(f"(companypublisher:post):An error ocurred: {e}")
+        raise HTTPException(status_code=304, detail="Something wrong happens")
         return []
     finally:
         session.close()
@@ -75,9 +76,10 @@ async def delete_pairs_company_publisher(linker: linker_list, jwt_dependency: jw
     except Exception as e:
         print("rollback")
         session.rollback()
-        print(f"An error ocurred: {e}")
+        print(f"(companypublisher:delete): An error ocurred: {e}")
+        raise HTTPException(status_code=304, detail="Something wrong happens")
         return []
     finally:
-        session.close()
+        session.close() 
         return []
         # return returned

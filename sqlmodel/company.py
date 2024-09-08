@@ -1,5 +1,5 @@
 from sqlalchemy import Table, Column
-from sqlalchemy.sql.sqltypes import Integer, String, Date, BINARY
+from sqlalchemy.sql.sqltypes import Integer, String, Date, BINARY, Boolean
 from config.db import meta, engine
 
 Company = Table("company", meta, 
@@ -9,7 +9,7 @@ Company = Table("company", meta,
                 Column("email", String(15), nullable=True), 
                 Column("phone", String(15), nullable=True), 
                 Column("idUbigeo", Integer, nullable=True),
-                Column("active", BINARY, default=1), 
+                Column("active", BINARY, default=b'\x01'),
                 Column("type", Date, default='S')
                 )
 meta.create_all(bind=engine)
