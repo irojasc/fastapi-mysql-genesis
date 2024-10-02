@@ -9,6 +9,7 @@ from routes.product import product_route
 from routes.warehouse import warehouse_route
 from routes.company import company_route
 from routes.linker import linker_route
+from routes.inventory import inventory_route
 
 
 app = FastAPI(
@@ -31,6 +32,7 @@ app.include_router(company_route)
 app.include_router(linker_route)
 app.include_router(product_route)
 app.include_router(warehouse_route)
+app.include_router(inventory_route)
 
 @app.get("/", status_code=status.HTTP_200_OK, tags=['Default'])
 async def default():

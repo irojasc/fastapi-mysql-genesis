@@ -19,7 +19,7 @@ def authenticate_user(username: str, password:str):
             Response = False
         else:
             if bool(bcrypt_context.verify(password, pw)):
-                Response = dict2obj({"id": id, "usr": usr})
+                Response = dict2obj({"id": id, "usr": usr, "pw": pw})
     except:
         print("rollback")
         session.rollback()

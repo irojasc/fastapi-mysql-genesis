@@ -1,6 +1,9 @@
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
+load_dotenv(override=True)
+
 engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
     os.getenv("DB_USER", default=None),
     os.getenv("DB_PASSWORD", default=None),

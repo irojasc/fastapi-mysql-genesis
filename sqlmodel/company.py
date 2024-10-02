@@ -3,7 +3,7 @@ from sqlalchemy.sql.sqltypes import Integer, String, Date, BINARY, Boolean
 from config.db import meta, engine
 
 Company = Table("company", meta, 
-                Column("doc", String(11), primary_key=True), 
+                Column("cardCode", String(11), primary_key=True), 
                 Column("docName", String(50), nullable=True), 
                 Column("address", String(50), nullable=True), 
                 Column("email", String(15), nullable=True), 

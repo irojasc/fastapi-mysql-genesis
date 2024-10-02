@@ -22,22 +22,7 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
     if not user:
         raise HTTPException(status_code=401, detail='User not authorized')
     token = create_access_token(user.id, user.usr, hours=TOKEN_HOURS_EXPIRATION)
-    return {'userId': user.id, 'userName': user.usr, 'access_token': token, 'token_type': 'bearer'}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    return {'userId': user.id, 'userName': user.usr, 'hashed': user.pw, 'access_token': token, 'token_type': 'bearer'}
 
 # auth_route
 #.post("/", status_code=status.HTTP_201_CREATED)
