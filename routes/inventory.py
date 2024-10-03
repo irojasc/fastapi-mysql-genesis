@@ -29,7 +29,7 @@ inventory_route = APIRouter(
 #aqui falta agregar la parte donde solo algunos pueden ejecutar este comando
 @inventory_route.get("/", status_code=200)
 # async def Get_All_Inventory_and_Data_Product(token_key: str, jwt_dependency: jwt_dependecy):
-async def Get_All_Inventory_and_Data_Product(token_key: str = ''):
+async def Get_All_Inventory_and_Data_Product(token_key: str, jwt_dependency: jwt_dependecy):
     returned = False
     try:
         if token_key == 'CHUSPa@123':
@@ -55,7 +55,7 @@ async def Get_All_Inventory_and_Data_Product(token_key: str = ''):
         return returned
 
 @inventory_route.get("/lastchanges", status_code=200)
-async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01'):
+async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01', jwt_dependency: jwt_dependecy = None):
     returned = False
     try:
         innerDate = datetime.strptime(inputDate, "%Y-%m-%d")
@@ -81,7 +81,7 @@ async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01')
         return returned
 
 @inventory_route.patch("/updatequantities", status_code=200)
-async def Update_Inventory_Quantities(invoice: InOut_Qty):
+async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_dependecy = None):
     returned = False
     message = 'Ok'
     try:
