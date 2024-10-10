@@ -54,7 +54,7 @@ async def post_new_company(company: company, jwt_dependency: jwt_dependecy):
             stmt = (
             insert(Company).
             values(
-                doc = company.DocNum,
+                cardCode = company.DocNum,
                 docName= company.DocName,
                 address= company.DocAddress,
                 email= company.DocEmail,
