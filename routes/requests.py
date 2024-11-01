@@ -1,3 +1,5 @@
+import os
+import json
 import gspread
 from fastapi import APIRouter, Depends, HTTPException
 from utils.validate_jwt import jwt_dependecy
@@ -5,12 +7,20 @@ from google.oauth2.service_account import Credentials
 from google.auth.exceptions import GoogleAuthError
 from gspread.exceptions import GSpreadException
 from basemodel.product import product_maintenance
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
+credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+
+# Parse the JSON string into a dictionary
+credentials_dict = json.loads(credentials_json)
 
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets"
 ]
 
-creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+# creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
 
 
 
