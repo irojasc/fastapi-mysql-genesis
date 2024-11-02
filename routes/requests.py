@@ -15,12 +15,8 @@ credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
 # Parse the JSON string into a dictionary
 credentials_dict = json.loads(credentials_json)
 
-scopes = [
-    "https://www.googleapis.com/auth/spreadsheets"
-]
-
 # creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
-creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
+creds = Credentials.from_service_account_info(credentials_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
 
 
 

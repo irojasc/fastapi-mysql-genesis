@@ -1,16 +1,30 @@
+import json
+import gspread
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session
+from config.db import con, session, CREDENTIALS_JSON
 from sqlmodel.product import Product
 from functions.product import get_all_publishers
+from google.oauth2.service_account import Credentials
+from google.auth.exceptions import GoogleAuthError
+from gspread.exceptions import GSpreadException
+from basemodel.product import product_maintenance
 
 product_route = APIRouter(
     prefix = '/product',
     tags=['Product']
 )
+
+##Activar credenciales google
+# Parse the JSON string into a dictionary
+credentials_dict = json.loads(CREDENTIALS_JSON)
+
+# creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+creds = Credentials.from_service_account_info(credentials_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+
 
 def get_isbn_isExists(isbn):
     return f"pr.isbn like '%{isbn.upper()}%' and " if bool(isbn) else " "
@@ -26,8 +40,8 @@ async def get_all_products(jwt_dependency: jwt_dependecy):
         raise HTTPException(status_code=401, detail='Authentication failed')
 
 
-@product_route.get("/stock", status_code=200)
-async def get_stock_by_publisher(jwt_dependency: jwt_dependecy,
+@product_route.get("/stock_by_product_attribute", status_code=200)
+async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
                                 Isbn: Optional[str] = "",
                                 Title: Optional[str] = "",
                                 Autor: Optional[str] = "",
@@ -136,4 +150,43 @@ async def get_price_by_ware_house(
             status_code=200,
             content= result
             )
-
+        
+@product_route.post("/request_maintenance", status_code=200)
+async def request_product_maintenance(jwt_dependency: jwt_dependecy, product_maintenance: product_maintenance):
+    data = [
+        product_maintenance.code,
+        product_maintenance.isbn ,
+        product_maintenance.title,
+        product_maintenance.autor,
+        product_maintenance.publisher,
+        '', #proveedor
+        '', #lenguaje
+        '', #paginas
+        '', #cubierta
+        '', #ancho
+        '', #alto
+        product_maintenance.pv,
+        product_maintenance.pvp,
+        '', #"edicion"
+        '', #"año mes edicion"
+        product_maintenance.warehouse,
+        product_maintenance.rqType,
+        product_maintenance.asker,
+        product_maintenance.date,
+        ]
+    try:
+        client = gspread.authorize(creds)
+        sheet_id = '1ArWWeiC9JsiLJw021O3EzS9i1XLMAbg0Z8S9b-5rmtY'
+        sheet = client.open_by_key(sheet_id)
+        row_counts = sheet.sheet1.row_count
+        sheet.sheet1.append_row(data)
+        return {"state": True}
+    except GoogleAuthError as auth_error:
+        print(f"Authentication error: {auth_error}")
+        return {"state": False}
+    except GSpreadException as gs_error:
+        print(f"Gspread error: {gs_error}")
+        return {"state": True}
+    except Exception as e:
+        print(f"get_last_row:get: An error ocurred: {e}")
+        return {"state": True}

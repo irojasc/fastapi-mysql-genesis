@@ -20,6 +20,7 @@ meta = MetaData()
 con = engine.connect()
 SECRET_KEY = os.getenv("SECRET_KEY", default=None)
 ALGORITHM = os.getenv("ALGORITHM_KEY", default=None)
+CREDENTIALS_JSON = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON', None)
 
 # from decouple import Config, RepositoryEnv
 # DOTENV_FILE = './.env'
