@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, aliased
 load_dotenv(override=True)
 
 engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
