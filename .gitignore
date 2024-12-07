@@ -138,3 +138,5 @@ dmypy.json
 
 #google sheet credentials
 credentials.json
+
+sample.json
