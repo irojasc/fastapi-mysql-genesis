@@ -20,7 +20,7 @@ def get_all_inventory_data(data: list = []):
                 "dateOut": item[7].strftime('%Y-%m-%d') if bool(item[7]) else None,
                 "lang": item[8],
                 "pages": item[9],
-                "edition": item[10],
+                "weight": item[10],
                 "cover": changeBin2Bool(item[11]),
                 "width": item[12],
                 "height": item[13],
