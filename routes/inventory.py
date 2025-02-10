@@ -34,7 +34,7 @@ async def Get_All_Inventory_and_Data_Product(token_key: str, jwt_dependency: jwt
     try:
         if token_key == 'CHUSPa@123':
             results = session.query(Ware.c.code, Item.c.code, Product.c.id,Product.c.isbn, Product.c.title, Product.c.autor, 
-                                    Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.edition, Product.c.cover,
+                                    Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, Product.c.cover,
                                     Product.c.width, Product.c.height,
                                     Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld,
                                     Ware_Product.c.loc, Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True).join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True).join(Language, Product.c.idLanguage == Language.
@@ -64,7 +64,7 @@ async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01',
         subquery_ = select(Product.c.id).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True).join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True).join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id).filter(or_(Product.c.creationDate >= inputDate, Product.c.editDate >= inputDate, Ware_Product.c.creationDate >= inputDate, Ware_Product.c.editDate >= inputDate))
         #get select subquery sqlalchemy?
         results = session.query(Ware.c.code, Item.c.code, Product.c.id,Product.c.isbn, Product.c.title, Product.c.autor, 
-                                Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.edition, 
+                                Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
                                 Product.c.cover, Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, 
                                 Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld, Ware_Product.c.loc, 
                                 Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare).join(Ware_Product, 
