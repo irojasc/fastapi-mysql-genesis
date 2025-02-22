@@ -11,9 +11,9 @@ oauth2_bearer = OAuth2PasswordBearer(tokenUrl='Login/token')
 async def get_jwt_validation(token: Annotated[str, Depends(oauth2_bearer)]):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return True
+        return True, payload['username']
     except JWTError:
-        return False
+        return False, None
 
 jwt_dependecy = Annotated[bool, Depends(get_jwt_validation)]
      

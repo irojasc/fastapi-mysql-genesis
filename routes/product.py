@@ -2,16 +2,19 @@ import json
 import gspread
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session, CREDENTIALS_JSON
 from sqlmodel.product import Product
+from sqlmodel.ware_product import Ware_Product
+from sqlmodel.user_perm_mdl import User_perm_mdl
 from functions.product import get_all_publishers
 from google.oauth2.service_account import Credentials
 from google.auth.exceptions import GoogleAuthError
 from gspread.exceptions import GSpreadException
 from basemodel.product import product_maintenance
+from sqlalchemy.exc import SQLAlchemyError
 
 product_route = APIRouter(
     prefix = '/product',
@@ -32,12 +35,13 @@ def get_isbn_isExists(isbn):
 
 @product_route.get("/", status_code=200)
 async def get_all_products(jwt_dependency: jwt_dependecy):
-    if jwt_dependency:
-        return {
-            "content": []
-        }
-    else:
-        raise HTTPException(status_code=401, detail='Authentication failed')
+    return []
+    # if jwt_dependency:
+    #     return {
+    #         "content": []
+    #     }
+    # else:
+    #     raise HTTPException(status_code=401, detail='Authentication failed')
 
 
 @product_route.get("/stock_by_product_attribute", status_code=200)
@@ -47,7 +51,8 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
                                 Autor: Optional[str] = "",
                                 Publisher: Optional[str] = "",
                                 ):
-    if not(jwt_dependency):
+    # if not(jwt_dependency):
+    if not(True):
         raise HTTPException(
             status_code=498,
             detail='Invalid Access Token',
@@ -115,7 +120,6 @@ async def Get_All_Publishers(jwt_dependency: jwt_dependecy):
     finally:
         session.close()
         return returned
-            
 
 @product_route.get("/price", status_code=200)
 async def get_price_by_ware_house(
@@ -190,3 +194,57 @@ async def request_product_maintenance(jwt_dependency: jwt_dependecy, product_mai
     except Exception as e:
         print(f"get_last_row:get: An error ocurred: {e}")
         return {"state": True}
+
+@product_route.delete("/", status_code=200)
+async def delete_product(jwt_dependency: jwt_dependecy, idProduct: str = None, curDate: str = None, nameModule: str = None):
+    #cuando jwt_dependency es false, es por que el token ya vencio
+    if jwt_dependency[0]:
+        try:
+            #verificamos que no exista stock
+            stock_exits = session.query(func.sum(Ware_Product.c.qtyNew)).filter(Ware_Product.c.idProduct == idProduct).scalar()
+            if stock_exits == 0:
+                response = session.query(User_perm_mdl).filter(User_perm_mdl.c.mdlCode == nameModule, 
+                                                    User_perm_mdl.c.permCode == 'DPR',
+                                                    User_perm_mdl.c.user == jwt_dependency[1]).first()
+                if response is not None:
+                    try:
+                        if((idProduct is not None and curDate is not None) and (idProduct != '' and curDate != '')):
+                            rows_affected = session.query(Product).filter(Product.c.id == idProduct).update({
+                                "isDelete": b'\x01',
+                                "editDate": curDate})
+                            
+                            session.commit()
+                            session.close()
+                            return {
+                                'status': 'ok'
+                            }
+                        else:
+                            return JSONResponse(
+                                status_code=400,
+                                content={"message": 'Bad Request', "status": "Check productId or moduleCode or editDate", "code": 400}
+                            )
+                    except Exception as e:
+                        print(f"delete_product: {e}")
+                        session.close()
+                        return False
+                else:
+                    session.close()
+                    return JSONResponse(
+                        status_code=401,
+                        content={"message": 'Unauthorized', "status": "No tiene permisos para esta operación", "code": 401}
+                    )
+            else:
+                session.close()
+                return JSONResponse(
+                    status_code=401,
+                    content={"message": 'Unauthorized', "status": "El producto contiene stock, primero regularice", "code": 401}
+                )
+        except SQLAlchemyError as e:
+            session.rollback()
+            session.close()
+            print(f"SQLAlchemy error occurred: {e}")
+    else:
+        return JSONResponse(
+            status_code=401,
+            content={"message": 'Token expired', "status": "error", "code": 401}
+        )

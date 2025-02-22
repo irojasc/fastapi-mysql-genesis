@@ -2,10 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, insert, delete
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session
-from utils.validate_jwt import jwt_dependecy
 from sqlmodel.company import Company
-from sqlmodel.ubigeo import Ubigeo
 from basemodel.company import company
+from sqlmodel.ubigeo import Ubigeo
 from functions.company import get_all_companies
 
 company_route = APIRouter(

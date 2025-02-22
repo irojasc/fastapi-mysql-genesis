@@ -24,14 +24,14 @@ def get_ware_house():
         #     )
         # else:
         # dataUsrs = con.execute(select(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet).select_from(Ware.join(WareSet, Ware.c.warelvl == WareSet.c.lvl)))
-        data = session.query(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet).\
+        data = session.query(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet, Ware.c.isPos).\
         join(WareSet, Ware.c.warelvl == WareSet.c.lvl).\
         all()
         #get colums name of selected table with session sqlalchemy?
         #select specific columns with session and join tables sqlalchemy?
         # data = dataUsrs.fetchall()
         # keys = list(dataUsrs.keys())
-        result  = list(map(lambda x: {"id": x[0], "cod": x[1], "auth": {"isVirtual": x[2]!=b'\x00', "enabled": x[3]!=b'\x00', "locTooltip": x[5]!=b'\x00'}}, data))
+        result  = list(map(lambda x: {"id": x[0], "cod": x[1], "auth": {"isVirtual": x[2]!=b'\x00', "enabled": x[3]!=b'\x00', "locTooltip": x[5]!=b'\x00', "isPos": x[-1]!=b'\x00'}}, data))
         returned = {"result": result}
         # return JSONResponse(
         #     status_code=200,

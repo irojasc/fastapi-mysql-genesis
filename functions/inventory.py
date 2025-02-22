@@ -2,7 +2,8 @@ import datetime
 
 def changeBin2Bool(data):
     # Define the binary string
-    return True if b'\x01' == data else False
+    valor = True if b'\x01' == data else False
+    return valor
 
 def get_all_inventory_data(data: list = []):
     tmpList = []
@@ -13,26 +14,27 @@ def get_all_inventory_data(data: list = []):
                 "product": {
                 "id": item[2],
                 "prdCode": '%s_%d' % (item[1], item[2]),
-                "isbn": item[3],
+                "isbn": '' if item[3] is None else item[3],
                 "title": item[4],
                 "autor": item[5],
                 "publisher": item[6],
                 "dateOut": item[7].strftime('%Y-%m-%d') if bool(item[7]) else None,
                 "lang": item[8],
                 "pages": item[9],
-                "edition": item[10],
-                "cover": changeBin2Bool(item[11]),
+                "weight": item[10],
+                "cover": None if item[11] is None else changeBin2Bool(item[11]),
                 "width": item[12],
                 "height": item[13],
                 "content": None,
-                "itemCategory": None
+                "itemCategory": None,
+                "isDelete": False if item[24] is None else changeBin2Bool(item[24]),
                 },
                 "wareData": {}
             }
-            dict_data["wareData"][item[0]] = {"qtyNew": item[14], "qtyOld": item[15], "qtyMinimun": item[16] ,"pvNew": item[17], "pvOld": item[18], "loc": item[19], "isEnabled": changeBin2Bool(item[20]), "dsct": item[21], "idWare": item[22]}
+            dict_data["wareData"][item[0]] = {"qtyNew": item[14], "qtyOld": item[15], "qtyMinimun": item[16] , "qtyMaximum": item[23], "pvNew": item[17], "pvOld": item[18], "loc": item[19], "isEnabled": changeBin2Bool(item[20]), "dsct": item[21], "idWare": item[22]}
             tmpList.append(dict_data)
         else:
-            tmpList[index]["wareData"][item[0]] = {"qtyNew": item[14], "qtyOld": item[15], "qtyMinimun": item[16] ,"pvNew": item[17], "pvOld": item[18], "loc": item[19], "isEnabled": changeBin2Bool(item[20]), "dsct": item[21], "idWare": item[22]}
+            tmpList[index]["wareData"][item[0]] = {"qtyNew": item[14], "qtyOld": item[15], "qtyMinimun": item[16] , "qtyMaximum": item[23], "pvNew": item[17], "pvOld": item[18], "loc": item[19], "isEnabled": changeBin2Bool(item[20]), "dsct": item[21], "idWare": item[22]}
 
     return tmpList
 

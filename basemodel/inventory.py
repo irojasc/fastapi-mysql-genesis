@@ -29,4 +29,5 @@ class WareProduct(BaseModel):
     idProduct: Optional[int] = None
     loc: Optional[str] = None
     editDate: Optional[str] = None
+
     ## ...... falta completar

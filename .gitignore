@@ -140,3 +140,5 @@ dmypy.json
 credentials.json
 
 sample.json
+
+todosapp.db
