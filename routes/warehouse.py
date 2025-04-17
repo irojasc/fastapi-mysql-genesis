@@ -24,23 +24,30 @@ def get_ware_house():
         #     )
         # else:
         # dataUsrs = con.execute(select(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet).select_from(Ware.join(WareSet, Ware.c.warelvl == WareSet.c.lvl)))
-        data = session.query(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet, Ware.c.isPos).\
+        data = session.query(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet, Ware.c.isPos, Ware.c.inv_allowed, Ware.c.inv_clean, Ware.c.inv_date).\
         join(WareSet, Ware.c.warelvl == WareSet.c.lvl).\
         all()
         #get colums name of selected table with session sqlalchemy?
         #select specific columns with session and join tables sqlalchemy?
         # data = dataUsrs.fetchall()
         # keys = list(dataUsrs.keys())
-        result  = list(map(lambda x: {"id": x[0], "cod": x[1], "auth": {"isVirtual": x[2]!=b'\x00', "enabled": x[3]!=b'\x00', "locTooltip": x[5]!=b'\x00', "isPos": x[-1]!=b'\x00'}}, data))
+        result  = list(map(lambda x: {"id": x[0], 
+                                      "cod": x[1], 
+                                      "auth": {"isVirtual": x[2]!=b'\x00', 
+                                               "enabled": x[3]!=b'\x00', 
+                                               "locTooltip": x[5]!=b'\x00', 
+                                               "isPos": x[-4]!=b'\x00',
+                                               "inv_allowed": x[-3]!=b'\x00',
+                                               "inv_clean": x[-2]!=b'\x00',
+                                               "inv_date": x[-1] or None,
+                                               }}, data))
         returned = {"result": result}
-        # return JSONResponse(
-        #     status_code=200,
-        #     content={"result": result}
-        #     )
     except Exception as e:
-        print(f"get_ware_house/nopair:get:An error ocurred: {e}")
+        session.close()
+        print(f"get_ware_house:get:An error ocurred: {e}")
     except SQLAlchemyError as e:
         print("An SqlAlchemmy happened ", e)
+        session.close()
         session.rollback()
     finally:
         session.close()

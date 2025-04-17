@@ -13,5 +13,8 @@ Ware = Table("ware", meta,
                 Column("city", String(12), default=None), 
                 Column("name", String(15), default=None),
                 Column("isPos", _Binary, nullable=False, default=b'\x01'),
+                Column("inv_allowed", _Binary, nullable=False, default=b'\x00'),
+                Column("inv_clean", _Binary, nullable=False, default=b'\x00'),
+                Column("inv_date", Date, default=None)
                 )
 meta.create_all(bind=engine)

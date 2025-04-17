@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text, desc, asc, or_, func, and_
+from sqlalchemy import select, text, desc, asc, or_, func, and_, null
 from sqlalchemy.exc import SQLAlchemyError
 from utils.validate_jwt import jwt_dependecy
 from utils.converters import binary2bool
@@ -14,12 +14,12 @@ from sqlmodel.ware_product import Ware_Product
 from sqlmodel.transfer_product import Transfer_Product
 from sqlmodel.operation_reason import Operation_Reason
 from sqlmodel.company import Company
-from sqlmodel.ware import Ware
 # from functions.product import get_all_publishers
 from functions.inventory import get_all_inventory_data, get_all_active_transfer
 from sqlalchemy import insert, delete, update
 from basemodel.inventory import InOut_Qty, WareProduct
 from basemodel.product import ware_product_
+from basemodel.ware import ware_edited
 import json
 from datetime import datetime
 
@@ -143,6 +143,8 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             #ANTIQUE
             body.update({'antique': False})
 
+            body.update({'webprom': False }) #WEBPROMOTION
+
             #WAREDATA
             wareDataList = session.query(Ware.c.code, Ware.c.isVirtual).all()
             for key in wareDataList:
@@ -165,7 +167,13 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             #FORMDATE
             body.update({'formDate': ''})
             session.close()
-            return body
+            
+            content = {
+            "success": True,
+            "message": "Todo ok!",
+            "object": body
+            }   
+            return JSONResponse(content=content, status_code=200)
         else:
             #PRODUCT
             product = session.query(Product, Item.c.code, Language.c.code). \
@@ -310,12 +318,9 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
     message = 'Ok'
     try:
         #state 1, transferencia cerrada
-        id_operation_reason = session.query(Operation_Reason.c.idOperReas).filter(Operation_Reason.c.operation == invoice.operacion).filter(Operation_Reason.c.reason == invoice.operacion_motivo).subquery()
-        id_fromWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.fromWare).subquery()
-        id_toWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.toWare).subquery()
         id_ware = session.query(Ware.c.id).filter(Ware.c.code == invoice.fromWare).first()[0]
-        params = list(map(lambda x: {'qtyN': (x.qtyNew if invoice.operacion == 'ingreso' else -abs(x.qtyNew)),
-                                        'qtyO': (x.qtyOld if invoice.operacion == 'ingreso' else -abs(x.qtyOld)),
+        params = list(map(lambda x: {'qtyN': (x.qtyNew if invoice.operacion == 'ingreso' or invoice.operacion == 'inventario' else -abs(x.qtyNew)),
+                                        'qtyO': (x.qtyOld if invoice.operacion == 'ingreso' or invoice.operacion == 'inventario' else -abs(x.qtyOld)),
                                         'editDa': invoice.fromDate,
                                         'location': invoice.ubicacion if bool(invoice.ubicacion) else None,
                                         'idPro' : int(x.code.split('_')[1]),
@@ -326,7 +331,10 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
             stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, qtyOld = qtyOld + :qtyO, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
         response_3 = session.execute(stmt, params)
         session.commit()
-        if(response_3.rowcount > 0):
+        if(response_3.rowcount > 0 and invoice.operacion != 'inventario'):
+            id_operation_reason = session.query(Operation_Reason.c.idOperReas).filter(Operation_Reason.c.operation == invoice.operacion).filter(Operation_Reason.c.reason == invoice.operacion_motivo).subquery()
+            id_fromWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.fromWare).subquery()
+            id_toWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.toWare).subquery()
             stmt1 = (
                 insert(Transfer).
                 values(
@@ -344,7 +352,7 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
                 )
             response_1 = session.execute(stmt1)
             session.commit()
-            if(response_1.rowcount > 0):
+            if(response_1.rowcount > 0 and invoice.operacion != 'inventario'):
                 stmt2 = Transfer_Product.insert()
                 products_to_insert = list(map(lambda x: {'idTransfer': invoice.codeTS, 'idProduct': int(x.code.split('_')[1]), 'qtyNew': x.qtyNew, 'qtyOld': x.qtyOld}, invoice.list_main))
                 response_2 = session.execute(stmt2, products_to_insert)
@@ -353,8 +361,13 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
                     returned = True
             else:
                 returned = False
+        elif(invoice.operacion == 'inventario'):
+            returned = True
+        else:
+            returned = False
     except Exception as e:
         print(f"Update_Inventory_Quantities/nopair:patch:An error ocurred: {e}")
+        session.close()
         returned = False
         message = f"Exception: {e}"
     except SQLAlchemyError as ex:
@@ -396,6 +409,47 @@ async def change_product_location(invoice: WareProduct = None, jwt_dependency: j
         response["state"] = False
         response["message"] = f"An error ocurred: {e}"
         
+    finally:
+        session.close()
+        return response
+
+@inventory_route.post("/inventorymode", status_code=200)
+async def run_inventory_mode(input_param: ware_edited = None, jwt_dependency: jwt_dependecy = None): 
+    # response model
+    response = {
+        "state": False,
+        "result": [],
+        "message": ""
+    }
+    try:
+        #(1)#primero modificar las cantidades a cero
+        result_1 = session.execute(update(Ware_Product).where((Ware_Product.c.idWare == input_param.wareCode)&\
+                                                            ((Ware_Product.c.qtyNew != 0) | (Ware_Product.c.qtyOld != 0))).values(qtyNew = 0, qtyOld = 0))
+        session.commit()
+        if(result_1.rowcount >= 0):
+            #(2)#luego actualiza la fecha de inventario
+            # 2025-04-13
+            result_2 = session.execute(update(Ware).where(and_(Ware.c.id == input_param.wareCode,
+                                                               or_(Ware.c.inv_date != input_param.editDate,
+                                                                   Ware.c.inv_date == None))).\
+                                     values(inv_date = input_param.editDate))
+            result_3 = session.execute(update(Ware).where((Ware.c.id == input_param.wareCode) & (Ware.c.inv_clean == 1)).\
+                                     values(inv_clean = b'\x00'))
+            session.commit()
+            if(result_2.rowcount >= 0 and result_3.rowcount >= 0):
+                response["state"] = True
+                response["message"] = f"Afectadas ware_product: {result_1.rowcount}, Ware: {result_2.rowcount}, invt_clean: {result_3.rowcount}"
+
+    except Exception as e:
+        response["state"] = False
+        response["message"] = f"An error ocurred: {e}"
+        session.close()
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        session.close()
+        response["state"] = False
+        response["message"] = f"An error ocurred: {e}"
     finally:
         session.close()
         return response
@@ -496,10 +550,14 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         ware_not_enabled = obtener_posiciones(exits_ware_codes, ware_not_enabled) if bool(len(ware_not_enabled)) else () #devuelve una tuple de idWares que no estan habilitados
 
         if bool(len(ware_not_enabled)):
+            
             #obtiene stock de ware not enabled
             stock_checked = session.query(func.sum(Ware_Product.c.qtyNew)). \
                             filter(Ware_Product.c.idWare.in_(ware_not_enabled)). \
                             filter(Ware_Product.c.idProduct == product_.id).scalar()
+            
+            ##IMPORTANTE, CUANDO stock_checked is None, entonces es por que solo se esta creando data en almacen, pero no se esta activando
+            stock_checked = stock_checked if stock_checked is not None else 0
         
         if stock_checked < 1:
             # trae idIitem apartir de itemCode
@@ -630,5 +688,116 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         }
         return JSONResponse(content=content, status_code=500)
 
+@inventory_route.post("/product", status_code=200)
+async def create_warehouse_product(product_: ware_product_ = None, jwt_dependency: jwt_dependecy = None):
+    def buscar_valor(lista, clave):
+        for item in lista:
+            if item[0] == clave:
+                return item[1]
+        return None  # Si no encuentra la clave, devuelve None
     
-   
+    try:
+        # print(product_.waredata)
+        # trae idIitem apartir de itemCode
+        scalarIdItem = session.query(Item.c.id).filter(Item.c.code == product_.idItem).scalar()
+
+        # trae idLanguage apartir de languageCode
+        scalarIdLanguage = session.query(Language.c.id).filter(Language.c.code == product_.idLanguage).scalar() if product_.idLanguage is not None else None
+
+        # obtener la lista de wares
+        wares = session.query(Ware.c.code, Ware.c.id).all()
+        #[('STC', 1), ('SNTG', 2), ('ALYZ', 3), ('WEB', 4), ('FRA', 5)]
+        
+        stmt = insert(Product).values(
+            id=product_.id,
+            idItem= scalarIdItem,
+            isbn=product_.isbn,
+            title=product_.title,
+            autor=product_.autor,
+            publisher=product_.publisher,
+            content=product_.content,
+            dateOut=datetime.strptime(product_.dateOut, '%Y-%m-%d').date() if product_.dateOut is not None else None,
+            idLanguage=scalarIdLanguage,
+            pages=product_.pages,
+            weight=product_.weight,
+            cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
+            width=product_.width,
+            height=product_.height,
+            editDate=datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
+            large=product_.large,
+            wholesale=b'\x01' if bool(product_.wholesale) else None,
+            antique=b'\x01' if bool(product_.antique) else None,
+            atWebProm=b'\x01' if bool(product_.atWebProm) else None
+        )
+
+        result = session.execute(stmt)
+    
+
+        if result.rowcount > 0:
+            #continua agregando los datos de los almacenes
+            for dato in product_.waredata: #solo los wares que existen
+                stmt = Ware_Product.insert().values(
+                    {'idWare': buscar_valor(wares, dato.wareCode), #retornar el id del Ware cuando envio ejmp. 'SNTG'
+                    'idProduct': product_.id,
+                    'qtyNew': 0,
+                    'qtyOld': 0,
+                    'pvNew': dato.pvp1 or 0.0,
+                    'pvOld': dato.pvp2 or 0.0, 
+                    'loc': dato.location or None,
+                    'dsct': dato.dsct or 0.0, 
+                    'qtyMinimun': dato.stockMin or 0,
+                    'isEnabled': b'\x01' if bool(dato.active) else b'\x00',
+                    'editDate': datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
+                    'creationDate': datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
+                    'qtyMaximum': dato.stockMax or 0,
+                })
+                result = session.execute(stmt)
+                if result.rowcount > 0:
+                    pass
+                else:
+                    break
+
+            session.commit()
+            session.close()
+
+            results = session.query(Ware.c.code, Item.c.code, Product.c.id,Product.c.isbn, Product.c.title, Product.c.autor, 
+            Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, Product.c.cover,
+            Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld,
+            Ware_Product.c.loc, Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, Product.c.isDelete). \
+            join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
+            join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
+            join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
+            join(Item, Product.c.idItem == Item.c.id).filter(Product.c.id == product_.id).all()
+            
+            session.close()
+            result_format = get_all_inventory_data(results)
+
+            content = {
+                "success": True,
+                "message": f"¡Producto registrado!",
+                "object": result_format[0]
+            }
+            return JSONResponse(content=content, status_code=200)
+        
+        session.close()
+    
+    except Exception as e:
+        content = {
+            "success": False,
+            "message": f"An error ocurred: {e}",
+            "object": None
+        }
+        return JSONResponse(content=content, status_code=500)
+    
+    except SQLAlchemyError as e:
+        session.rollback()
+        session.close()
+        content = {
+            "success": False,
+            "message": f"An error ocurred: {e}",
+            "object": None
+        }
+        return JSONResponse(content=content, status_code=500)
+
+
+
