@@ -252,8 +252,70 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
 
 
 #obtiene las trasferencias entre almacenes y los ingresos como salidas
-@inventory_route.get("/transfers_by_ware", status_code=200)
-async def Get_Transfers_By_Ware(curIdWare: int = None, curDate: str = None, stateAbove: int = 1, jwt_dependency: jwt_dependecy = None):
+@inventory_route.get("/transfer/checkcurrents", status_code=200)
+async def Get_Current_Transfers_By_Ware_And_Date(curIdWare: int = None, curDate: str = None, stateAbove: int = 1, jwt_dependency: jwt_dependecy = None):
+    returned = {
+        "status": 406,
+        "message": "No data available",
+        "result": [],
+    }
+    try:
+        # Create aliases for the Ware table
+        fWare = aliased(Ware)
+        tWare = aliased(Ware)
+
+        results = session.query(Transfer.c.codeTS,
+                                fWare.c.code,
+                                tWare.c.code,
+                                Transfer.c.fromUser,
+                                Transfer.c.toUser, 
+                                Transfer.c.fromDate, 
+                                Transfer.c.toDate, 
+                                Transfer.c.state,
+                                Transfer.c.note,
+                                Transfer.c.cardCode,
+                                #cambiar docName por cardName
+                                Company.c.docName,
+                                Operation_Reason.c.operation,
+                                Operation_Reason.c.reason,
+                                Transfer_Product.c.idProduct,
+                                Product.c.isbn,
+                                Product.c.title, 
+                                Product.c.autor, #<-- nuevo 1
+                                Product.c.publisher, #<-- nuevo 2
+                                Transfer_Product.c.qtyNew,
+                                Transfer_Product.c.qtyOld,
+                                )  \
+                                .join(Transfer_Product, Transfer.c.codeTS == Transfer_Product.c.idTransfer) \
+                                .join(Product, Transfer_Product.c.idProduct == Product.c.id) \
+                                .join(fWare, Transfer.c.fromWareId == fWare.c.id) \
+                                .join(tWare, Transfer.c.toWareId == tWare.c.id, isouter=True) \
+                                .join(Operation_Reason, Transfer.c.idOperReas == Operation_Reason.c.idOperReas, isouter=True) \
+                                .join(Company, Transfer.c.cardCode == Company.c.cardCode, isouter=True) \
+                                .filter(
+                                    or_(Transfer.c.state > stateAbove, Transfer.c.toDate == curDate), 
+                                    or_(Transfer.c.fromWareId == curIdWare, Transfer.c.toWareId == curIdWare)) \
+                                .order_by(desc(Transfer.c.codeTS)) \
+                                .all()
+        (results, message) = get_all_active_transfer(results)
+        returned = {
+        "status": 200,
+        "message": message,
+        "result": results,
+        }
+    except Exception as e:
+        print(f"Get_Open_Transfers :get:An error ocurred: {e}")
+    except SQLAlchemyError as ex:
+        print("roll")
+        session.rollback()
+        session.close()
+        print("Get_Open_Transfers: An error ocurred", ex)
+    finally:
+        session.close()
+        return returned
+
+@inventory_route.get("/transfer/checkbytimestamp", status_code=200)
+async def Get_Transfer_By_TimeStamp(curIdWare: int = None, timeStamp: str = '', jwt_dependency: jwt_dependecy = None):
     returned = {
         "status": 406,
         "message": "No data available",
@@ -281,36 +343,38 @@ async def Get_Transfers_By_Ware(curIdWare: int = None, curDate: str = None, stat
                                 Transfer_Product.c.idProduct,
                                 Product.c.isbn,
                                 Product.c.title,
+                                Product.c.autor, #<-- nuevo 1
+                                Product.c.publisher, #<-- nuevo 2
                                 Transfer_Product.c.qtyNew,
                                 Transfer_Product.c.qtyOld,
+                                Ware_Product.c.pvNew,
                                 )  \
                                 .join(Transfer_Product, Transfer.c.codeTS == Transfer_Product.c.idTransfer) \
+                                .join(Ware_Product, and_(Transfer_Product.c.idProduct == Ware_Product.c.idProduct, Ware_Product.c.idWare == curIdWare), isouter=True) \
                                 .join(Product, Transfer_Product.c.idProduct == Product.c.id) \
                                 .join(fWare, Transfer.c.fromWareId == fWare.c.id) \
                                 .join(tWare, Transfer.c.toWareId == tWare.c.id, isouter=True) \
                                 .join(Operation_Reason, Transfer.c.idOperReas == Operation_Reason.c.idOperReas, isouter=True) \
                                 .join(Company, Transfer.c.cardCode == Company.c.cardCode, isouter=True) \
-                                .filter(
-                                    or_(Transfer.c.state > stateAbove, Transfer.c.toDate == curDate), 
-                                    or_(Transfer.c.fromWareId == curIdWare, Transfer.c.toWareId == curIdWare)).all()
-                                
+                                .filter(Transfer.c.codeTS == timeStamp) \
+                                .all()
         (results, message) = get_all_active_transfer(results)
+
         returned = {
         "status": 200,
         "message": message,
         "result": results,
         }
     except Exception as e:
-        print(f"Get_Open_Transfers :get:An error ocurred: {e}")
+        print(f"Get_Transfer_By_TimeStamp :get:An error ocurred: {e}")
     except SQLAlchemyError as ex:
         print("roll")
         session.rollback()
         session.close()
-        print("Get_Open_Transfers: An error ocurred", ex)
+        print("Get_Transfer_By_TimeStamp: An error ocurred", ex)
     finally:
         session.close()
         return returned
-
 
 @inventory_route.patch("/updatequantities", status_code=200)
 async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_dependecy = None):

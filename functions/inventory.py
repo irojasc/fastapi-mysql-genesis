@@ -65,8 +65,11 @@ def get_all_active_transfer(data: list = []):
                             "id": item[13],
                             "isbn": item[14],
                             "title": item[15],
-                            "qtyNew": item[16],
-                            "qtyOld": item[17],
+                            "autor": item[16],
+                            "publisher": item[17],
+                            "qtyNew": item[18],
+                            "qtyOld": item[19],
+                            "pvWare": item[20] if len(item) > 20 else None, #<--este valor esta retornando como float
                         }
                     ]
                 })
@@ -77,8 +80,11 @@ def get_all_active_transfer(data: list = []):
                             "id": item[13],
                             "isbn": item[14],
                             "title": item[15],
-                            "qtyNew": item[16],
-                            "qtyOld": item[17],
+                            "autor": item[16],
+                            "publisher": item[17],
+                            "qtyNew": item[18],
+                            "qtyOld": item[19],
+                            "pvWare": item[20] if len(item) > 20 else None, #<--este valor esta retornando como float
                     })
 
         return (myList, 'Ok')
