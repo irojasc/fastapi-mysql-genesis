@@ -62,8 +62,18 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
         result = []
         try:
             if bool(Isbn) or bool(Title) or bool(Autor) or bool(Publisher):
-                query = f"wp.idProduct as idProduct, pr.isbn, pr.title, pr.autor, pr.publisher, wr.code, wp.pvNew, wp.isEnabled as enabled, wp.qtyNew as stock from genesisDB.ware_product wp inner join genesisDB.product pr on wp.idProduct = pr.id inner join genesisDB.ware wr on wp.idWare = wr.id where {get_isbn_isExists(Isbn)} pr.title like '%{Title.upper()}%' and pr.autor like '%{Autor.upper()}%' and pr.publisher like '%{Publisher.upper()}%' group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew order by wp.idProduct asc"
-                # stock = con.execute(select(text(query)))
+                query = f"""wp.idProduct as idProduct, 
+                pr.isbn, pr.title, pr.autor, pr.publisher, 
+                wr.code, wp.pvNew, wp.isEnabled as enabled, 
+                wp.qtyNew as stock from ware_product wp 
+                inner join product pr on wp.idProduct = pr.id 
+                inner join ware wr on wp.idWare = wr.id 
+                where {get_isbn_isExists(Isbn)} pr.title like '%{Title.upper()}%' 
+                and pr.autor like '%{Autor.upper()}%' 
+                and pr.publisher like '%{Publisher.upper()}%' 
+                and wr.enabled = 1
+                group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew 
+                order by wp.idProduct asc"""
                 stock = session.execute(select(text(query)))
                 data = stock.fetchall()
                 # result = []
@@ -76,14 +86,15 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
                             "title": item[2],
                             "autor": item[3],
                             "publisher": item[4],
-                            "isEnabled": item[7] != b'\x00',
-                            "stock": int(item[8]),
-                            "pv": {item[5]: item[6]}
+                            "isEnabled": {item[5]: item[7] != b'\x00'},
+                            "stock": {item[5]: int(item[8])},
+                            "pvp": {item[5]: item[6]}
                         })
                     else:
-                        result[_index]["isEnabled"] = result[_index]["isEnabled"] or (item[7] != b'\x00')
-                        result[_index]["stock"] = result[_index]["stock"] + int(item[8])
-                        result[_index]["pv"][item[5]] = item[6]
+                        # result[_index]["isEnabled"] = result[_index]["isEnabled"] or (item[7] != b'\x00')
+                        result[_index]["isEnabled"][item[5]] = item[7] != b'\x00'
+                        result[_index]["stock"][item[5]] = int(item[8])
+                        result[_index]["pvp"][item[5]] = item[6]
         
                 status = True
                 # return JSONResponse(

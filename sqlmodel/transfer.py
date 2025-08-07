@@ -13,6 +13,6 @@ Transfer = Table("transfer_", meta,
                 Column("state", Integer, default=3),
                 Column("idOperReas", Integer, nullable=True, default=None), 
                 Column("note", String(60), nullable=True, default=None), 
-                Column("cardCode", String(11), nullable=True, default=None),
+                Column("cardCode", String(15), nullable=True, default=None),
                 )
 meta.create_all(bind=engine)

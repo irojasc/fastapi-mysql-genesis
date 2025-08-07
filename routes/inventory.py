@@ -95,12 +95,12 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
     try:
         body = {}
         waredata = {}
-        #ITEM
+        #ITEM, Obtiene tipos de items
         itemList = session.query(Item.c.code, Item.c.item).all()
-        #LANGUAGE
+        #LANGUAGE, Obtiene tipos de lenguajes
         langList = session.query(Language.c.code, Language.c.language).all()
-
-        if not(idProduct):
+        
+        if not(idProduct): #CASO 1| CREAR NUEVO ARTICULO
             #ID
             body.update({'id': str(session.query(func.max(Product.c.id) + 1).scalar())}) #carga id
             
@@ -146,7 +146,12 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             body.update({'webprom': False }) #WEBPROMOTION
 
             #WAREDATA
-            wareDataList = session.query(Ware.c.code, Ware.c.isVirtual).all()
+            # wareDataList = session.query(Ware.c.code, Ware.c.isVirtual).all()
+            # SE OBTIENE DATA DE WARE QUE SOLO ESTA ACTIVO
+            wareDataList = session.query(Ware.c.code, Ware.c.isVirtual) \
+            .filter(Ware.c.enabled == 1) \
+            .all()
+
             for key in wareDataList:
                 waredata.update({
                     key[0]: {
@@ -174,7 +179,7 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             "object": body
             }   
             return JSONResponse(content=content, status_code=200)
-        else:
+        else: #CASO 2| EDITAR ARTICULO EXISTENTE
             #PRODUCT
             product = session.query(Product, Item.c.code, Language.c.code). \
                                 join(Item, Product.c.idItem == Item.c.id). \
@@ -203,8 +208,11 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             body.update({'antique': False if product[18] is None else binary2bool(product[18])}) #ANTIQUE
             body.update({'webprom': False if product[20] is None else binary2bool(product[20])}) #WEBPROMOTION
             #WAREDATA
+            # SE OBTIENE DATA DE WARE QUE SOLO ESTA ACTIVO
             wareData = session.query(Ware.c.code, Ware_Product, Ware.c.isVirtual). \
-                        outerjoin(Ware_Product, (Ware.c.id == Ware_Product.c.idWare) & (Ware_Product.c.idProduct == int(idProduct))).all()
+                        outerjoin(Ware_Product, (Ware.c.id == Ware_Product.c.idWare) & (Ware_Product.c.idProduct == int(idProduct))) \
+                        .filter(Ware.c.enabled == 1) \
+                        .all()
             for key in wareData:
                 waredata.update({
                     key[0]: {
