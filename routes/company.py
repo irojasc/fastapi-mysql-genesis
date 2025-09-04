@@ -27,14 +27,28 @@ async def Get_All_Companies(jwt_dependency: jwt_dependecy):
         session.close()
         return returned
 
-
-
-@company_route.get("/supplier", status_code=200)
-async def Get_All_Suppliers(jwt_dependency: jwt_dependecy):
+@company_route.get("/get_all_business_partners", status_code=200)
+async def Get_All_Bussines_Partners_By_Param(CardType:str=None, jwt_dependency: jwt_dependecy = None):
+    #ACEPTARA PARAMETROS, C Y S: DONDE C es customer y S es Supplier
     returned = []
     try:
-        results = session.query(Company).where(Company.c.type == 'S').where(Company.c.active == 1).all()
-        returned = list(map(get_all_companies,results))
+        if CardType is not None:
+            # join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True)
+            results = session.query(Company, Ubigeo.c.dep_name). \
+            join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
+            where(Company.c.type == CardType). \
+            where(Company.c.active == 1). \
+            order_by(asc(Company.c.docName)). \
+            all()
+            returned = list(map(get_all_companies,results))
+        else: #si es None, trae todo los resultados
+            results = session.query(Company, Ubigeo.c.dep_name). \
+            join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
+            where(Company.c.active == 1). \
+            order_by(asc(Company.c.docName)). \
+            all()
+            returned = list(map(get_all_companies,results))
+
     except Exception as e:
         print("rollback")
         session.rollback()
@@ -43,6 +57,23 @@ async def Get_All_Suppliers(jwt_dependency: jwt_dependecy):
     finally:
         session.close()
         return returned
+
+
+
+#@company_route.get("/supplier", status_code=200)
+#async def Get_All_Suppliers(jwt_dependency: jwt_dependecy):
+#    returned = []
+#    try:
+#        results = session.query(Company).where(Company.c.type == 'S').where(Company.c.active == 1).all()
+#        returned = list(map(get_all_companies,results))
+#    except Exception as e:
+#        print("rollback")
+#        session.rollback()
+#        print(f"An error ocurred: {e}")
+#        returned = []
+#    finally:
+#        session.close()
+#        return returned
     
 @company_route.post("/newcompany")
 async def post_new_company(company: company, jwt_dependency: jwt_dependecy):
