@@ -1,24 +1,210 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, asc, insert, delete
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+# from sqlalchemy import select, insert, delete, asc, func
+from sqlalchemy import select, asc, func, insert, and_
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session
 from sqlmodel.company import Company
-from basemodel.company import company
+from sqlmodel.banks import Banks
+from sqlmodel.paymentterms import PaymentTerms
+from sqlmodel.companycontacts import CompanyContacts
+from sqlmodel.companyaccounts import CompanyAccounts
+from basemodel.company import BusinessPartner
 from sqlmodel.ubigeo import Ubigeo
-from functions.company import get_all_companies
+from functions.company import get_all_companies, get_ubigeos_format
+from service.company import get_partner_by_ruc_dni # consume servicio de reniec o sunat
 
 company_route = APIRouter(
     prefix = '/company',
     tags=['Company']
 )
 
+@company_route.get("/bussines_partner/", status_code=200)
+async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jwt_dependecy = None):
+    returnedValue = {"body": {}, "message": "ok"}
+    status_code = 200
+    try:
+        if CardCode is not None:
+            ##EDITAAAR VA EN ESTAR PARTE
+            returnedValue.update({"body":{}})
+        else:
+            #Consulta bancos
+            banks = session.query(Banks.c.BankCodeApi, Banks.c.BankName) \
+            .order_by(Banks.c.BankName.asc()) \
+            .all()
 
-@company_route.get("/", status_code=200)
-async def Get_All_Companies(jwt_dependency: jwt_dependecy):
+            #Consulta terminos de pago
+            paymentterms = session.query(PaymentTerms.c.TermCode, PaymentTerms.c.TermName) \
+            .order_by(PaymentTerms.c.TermName.asc()) \
+            .all()
+
+            returnedValue.update({"body":{
+                "tipo_socio": None, # S o P : Supplier o Provider
+                "tipo_documento": None, #
+                "numero_documento": None,
+                "nombre": None,
+                "nombre_comercial": None,
+                "direccion": None,
+                "departamento": None,
+                "provincia": None,
+                "distrito": None,
+                "estado": None,
+                "condicion": None,
+                "contactos": {
+                    "1": {"nombre": None, "telefono": None, "correo": None, "default": True},
+                    "2": {"nombre": None, "telefono": None, "correo": None, "default": False}
+                },
+                "cuenta_bancaria": {"tipo_cuenta": None, "tipo_moneda": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None },
+                "condicion_pago": "CASH",
+                "bancos": list(map(lambda x: {"id": x[0], "name": x[1]}, banks)),
+                "condiciones_pago": list(map(lambda x: {"id": x[0], "name": x[1]}, paymentterms))
+            }})
+
+    except Exception as e:
+        session.rollback()
+        print(f"An error ocurred: {e}")
+        returnedValue.update({"message": f"An error ocurred: {e}"})
+        status_code=422,
+    finally:
+        session.close()
+        return JSONResponse(
+            status_code=status_code,
+            content=returnedValue
+        )
+
+@company_route.post("/bussines_partner/", status_code=201)
+async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency: jwt_dependecy = None):
+    returnedValue = {"body": {}, "message": "Socio creado!!"}
+    status_code = 201
+    try:
+
+        #OBTIENE EL IDUBIGEO
+        ubigeo = session.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
+                filter(Ubigeo.c.dep_id == BusinessPartner.departamento). \
+                filter(Ubigeo.c.pro_id == BusinessPartner.provincia). \
+                filter(Ubigeo.c.dis_id == BusinessPartner.distrito). \
+                first() 
+
+        #INSERTA DATO SOCIO DE NEGOCIO
+        defineCardCode = f"""{'P' if BusinessPartner.tipo_socio == 'S' else 'C'}{BusinessPartner.numero_documento}"""
+        stmt = (
+            insert(Company).
+            values(
+                cardCode= defineCardCode,
+                docName= BusinessPartner.nombre or None,
+                address= BusinessPartner.direccion or None,
+                idUbigeo= ubigeo.idUbigeo if ubigeo is not None else None,
+                type= BusinessPartner.tipo_socio or None,
+                LicTradNum= BusinessPartner.numero_documento or None,
+                creationDate= BusinessPartner.fecha_creacion or None,
+                DocType= BusinessPartner.tipo_documento or None,
+                CardStatus= BusinessPartner.estado or None,
+                CardCond= BusinessPartner.condicion or None,
+                BusinessName= BusinessPartner.nombre_comercial or None,
+                TermCode= BusinessPartner.condicion_pago or None,
+                UserSign= BusinessPartner.usuario_creacion or None
+            )
+        )
+        res_partner = session.execute(stmt)
+        session.commit()
+        rowsAffected = res_partner.rowcount
+        print(rowsAffected)
+        if(rowsAffected > 0): #VERIFICA QUE REGISTRA SOCIO PARA REGISTRAR CONTACTOS Y CUENTAS
+            #CREA CONTACTOS
+            if len(BusinessPartner.contactos) > 0:
+                for contact in BusinessPartner.contactos:
+                    stmt1 = (insert(CompanyContacts).
+                            values(
+                                cardCode=defineCardCode,
+                                LineId=contact.id,
+                                Name=contact.nombre,
+                                Phone=contact.telefono,
+                                Email=contact.correo,
+                                DefaultContact=int(contact.default),
+                        )
+                    )
+                    res_contact = session.execute(stmt1)
+                    if (res_contact.rowcount > 0):
+                        print(f"Grabo contacto {contact.nombre}") 
+                    else:
+                        returnedValue.update({"message": "Error al intentar grabar contactos"})
+                        break
+                session.commit()
+            else:
+                print("No registra contactos")
+
+            #CREA CUENTAS BANCARIAS
+            if len(BusinessPartner.cuenta_bancaria) > 0:
+                for bankAccount in BusinessPartner.cuenta_bancaria:
+                    stmt2 = (insert(CompanyAccounts).
+                            values(
+                            cardCode=defineCardCode,
+                            LineId=bankAccount.id,
+                            AccountType=bankAccount.tipo_cuenta,
+                            Currency=bankAccount.tipo_moneda,
+                            BankCodeApi=bankAccount.banco,
+                            AccountNumber=bankAccount.n_cuenta,
+                            InterbankNumber=bankAccount.n_cci,
+                            AccountHolder=bankAccount.titular,
+                        )
+                    )
+                    res_account = session.execute(stmt2)
+                    if (res_account.rowcount > 0):
+                        print(f"Grabo cuenta bancaria de cci {bankAccount.n_cci}") 
+                    else:
+                        returnedValue.update({"message": "Error al intentar grabar dato bancario"})
+                        break
+                session.commit()
+            else:
+                print("No registra cuenta bancaria")
+            
+            #RETORNAR SOCIO CREADO
+            value = await Get_All_Bussines_Partners_By_Param(CardCode=defineCardCode)
+            returnedValue.update({"body": value})
+
+        else:
+            status_code=422,
+            returnedValue.update({"message": "Error al registrar socio"})
+
+        
+ 
+    except Exception as e:
+        session.rollback()
+        print(f"An error ocurred: {e}")
+        returnedValue.update({"message": f"An error ocurred: {e}"})
+        status_code=422,
+    finally:
+        session.close()
+        return JSONResponse(
+            status_code= status_code[0] if isinstance(status_code, tuple) else status_code,
+            content=returnedValue
+        )
+
+
+@company_route.get("/ubigeos/", status_code=200)
+async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None, jwt_dependency: jwt_dependecy = None):
+# async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None):
+    #root1: padre departamento
+    #root2: padre provincia
+    #nivel: 2: provincia, 3: distrito
     returned = []
     try:
-        results = session.query(Company).all()
-        returned = list(map(get_all_companies,results))
+        if (departamento_id is not None) and (provincia_id is None): #consulta provincias
+            results = session.query(Ubigeo.c.pro_id, Ubigeo.c.pro_name) \
+            .filter(Ubigeo.c.dep_id == departamento_id) \
+            .group_by(Ubigeo.c.pro_id, Ubigeo.c.pro_name) \
+            .order_by(Ubigeo.c.pro_id.asc()) \
+            .all()
+        elif (departamento_id is not None) and (provincia_id is not None): #consulta distritos
+            results = session.query(Ubigeo.c.dis_id, Ubigeo.c.dis_name) \
+            .filter(Ubigeo.c.dep_id == departamento_id) \
+            .filter(Ubigeo.c.pro_id == provincia_id) \
+            .group_by(Ubigeo.c.dis_id, Ubigeo.c.dis_name) \
+            .order_by(Ubigeo.c.dis_id.asc()) \
+            .all()
+        else:
+            results = []
+        returned = list(map(get_ubigeos_format, results))
     except Exception as e:
         session.rollback()
         print(f"An error ocurred: {e}")
@@ -27,27 +213,85 @@ async def Get_All_Companies(jwt_dependency: jwt_dependecy):
         session.close()
         return returned
 
+@company_route.get("/get_user_data_from_sunat_reniec/", status_code=200)
+async def Get_User_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', jwt_dependency: jwt_dependecy = None):
+    """IMPORTANTE, ༼ つ ◕_◕ ༽つ DEBE SER EL MISMO FORMATO SI CAMBIA DE PROVEEDOR VVVV \n
+    CUANDO NO EXISTE UBIGEO, RETORNA '-'
+    """
+    #DNI:... {'first_name': '', 'first_last_name': '', 'second_last_name': '', 'full_name': '', 'document_number': ''}
+    #RUC:... {"razon_social":"", "numero_documento":"", "estado":"", "condicion":"", "direccion":"", "ubigeo":"", "via_tipo":"","via_nombre":"", "zona_codigo":"",
+    #"zona_tipo":"", "numero":"", "interior":"", "lote":"", "dpto":"", "manzana":"", "kilometro":"", "distrito":"", "provincia":"", "departamento":"", "es_agente_retencion":true}
+    returned = {}, 422
+    try:
+        params = {
+            "numero": nDocument
+        }
+        response, status_code = await get_partner_by_ruc_dni(params=params, tdocument=tDocument)
+        
+        if 'ubigeo' in response: #realiza consulta a backend genesis
+            result = session.query(Ubigeo.c.dep_name, Ubigeo.c.pro_name, Ubigeo.c.dis_name). \
+            filter(func.concat(Ubigeo.c.dep_id,Ubigeo.c.pro_id,Ubigeo.c.dis_id) == response["ubigeo"]).\
+            first()
+            if(result) and isinstance(response, dict):
+                response.update({"distrito_gene": result[2]})
+                response.update({"provincia_gene": result[1]})
+                response.update({"departamento_gene": result[0]})
+                response.update({"distrito_opciones_gene": await Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2], provincia_id=response["ubigeo"][2:4])}) # consulta distrito
+                response.update({"provincia_opciones_gene": await Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2])}) #consulta provincia
+            else:
+                response.update({"distrito_gene": None})
+                response.update({"provincia_gene": None})
+                response.update({"departamento_gene": None})
+                response.update({"distrito_opciones_gene": []})
+                response.update({"provincia_opciones_gene": []})
+            
+        if response is not None:
+            returned = response , status_code
+    except Exception as e:
+        session.rollback()
+        print(f"An error ocurred: {e}")
+    finally:
+        session.close()
+        return JSONResponse(
+        status_code=returned[1],
+        content={
+            "response": returned[0],
+        }
+    )
+
+
 @company_route.get("/get_all_business_partners", status_code=200)
-async def Get_All_Bussines_Partners_By_Param(CardType:str=None, jwt_dependency: jwt_dependecy = None):
+async def Get_All_Bussines_Partners_By_Param(CardType:str=None, CardCode:str=None, jwt_dependency: jwt_dependecy = None):
     #ACEPTARA PARAMETROS, C Y S: DONDE C es customer y S es Supplier
     returned = []
     try:
-        if CardType is not None:
-            # join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True)
-            results = session.query(Company, Ubigeo.c.dep_name). \
-            join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
-            where(Company.c.type == CardType). \
-            where(Company.c.active == 1). \
-            order_by(asc(Company.c.docName)). \
-            all()
-            returned = list(map(get_all_companies,results))
-        else: #si es None, trae todo los resultados
-            results = session.query(Company, Ubigeo.c.dep_name). \
-            join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
-            where(Company.c.active == 1). \
-            order_by(asc(Company.c.docName)). \
-            all()
-            returned = list(map(get_all_companies,results))
+        if CardCode is None:
+            if CardType is not None:
+                results = session.query(Company, CompanyContacts.c.Name, CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name). \
+                join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True). \
+                join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
+                where(Company.c.type == CardType). \
+                where(Company.c.active == 1). \
+                order_by(asc(Company.c.docName)). \
+                all()
+                returned = list(map(get_all_companies,results))
+            else: #si es None, trae todo los resultados
+                results = session.query(Company, CompanyContacts.c.Name, CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name). \
+                join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True). \
+                join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
+                where(Company.c.active == 1). \
+                order_by(asc(Company.c.docName)). \
+                all()
+                returned = list(map(get_all_companies,results))
+        else:
+            socio = session.query(Company, CompanyContacts.c.Name, CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name). \
+                join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True). \
+                join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
+                where(Company.c.cardCode == CardCode).\
+                first()
+            #cuando existe socio es una tuple
+            value = list(map(get_all_companies, [socio] if not(isinstance(socio, list)) else []))
+            returned = value[0]
 
     except Exception as e:
         print("rollback")
@@ -57,84 +301,3 @@ async def Get_All_Bussines_Partners_By_Param(CardType:str=None, jwt_dependency: 
     finally:
         session.close()
         return returned
-
-
-
-#@company_route.get("/supplier", status_code=200)
-#async def Get_All_Suppliers(jwt_dependency: jwt_dependecy):
-#    returned = []
-#    try:
-#        results = session.query(Company).where(Company.c.type == 'S').where(Company.c.active == 1).all()
-#        returned = list(map(get_all_companies,results))
-#    except Exception as e:
-#        print("rollback")
-#        session.rollback()
-#        print(f"An error ocurred: {e}")
-#        returned = []
-#    finally:
-#        session.close()
-#        return returned
-    
-@company_route.post("/newcompany")
-async def post_new_company(company: company, jwt_dependency: jwt_dependecy):
-    response = False
-    try:
-        result = session.query(Ubigeo).where(Ubigeo.c.dep_name == company.DocDepartamento.name).where(Ubigeo.c.pro_name == company.DocProvincia.name).where(Ubigeo.c.dis_name == company.DocDistrito.name).all()
-        if bool(result):
-            stmt = (
-            insert(Company).
-            values(
-                cardCode = company.DocNum,
-                docName= company.DocName,
-                address= company.DocAddress,
-                email= company.DocEmail,
-                phone= company.DocPhone,
-                idUbigeo= result[0][0],
-                type= company.TipoEmpresa,
-                )
-            )
-            response_1 = session.execute(stmt)
-            session.commit()
-            if(response_1.rowcount > 0):
-                response = True
-        else:
-            stmt = (
-            insert(Ubigeo).
-            values(
-                dep_id= company.DocDepartamento.id,
-                pro_id= company.DocProvincia.id,
-                dis_id= company.DocDistrito.id,
-                dep_name= company.DocDepartamento.name,
-                pro_name= company.DocProvincia.name,
-                dis_name= company.DocDistrito.name,
-                )
-            )
-            response_2 = session.execute(stmt)
-            session.commit()
-            if(response_2.rowcount > 0):
-                result_1 = session.query(Ubigeo).where(Ubigeo.c.dep_name == company.DocDepartamento.name).where(Ubigeo.c.pro_name == company.DocProvincia.name).where(Ubigeo.c.dis_name == company.DocDistrito.name).all()
-                stmt = (insert(Company).values(
-                doc = company.DocNum,
-                docName= company.DocName,
-                address= company.DocAddress,
-                email= company.DocEmail,
-                phone= company.DocPhone,
-                idUbigeo= result_1[0][0],
-                type= company.TipoEmpresa,
-                )
-                )
-                response_3 = session.execute(stmt)
-                session.commit()
-                if(response_3.rowcount > 0):
-                    response = True
-    except Exception as e:
-        print("rollback")
-        session.rollback()
-        print(f"An error ocurred: {e}")
-        response = False
-    finally:
-        session.close()
-        if response:
-            raise HTTPException(status_code=201, detail="Something wrong happens")
-        else:
-            raise HTTPException(status_code=304, detail="Something wrong happens")

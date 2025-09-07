@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, insert, delete, text
+from sqlalchemy import select, insert, delete, text, and_
 from sqlalchemy.exc import SQLAlchemyError
 from utils.validate_jwt import jwt_dependecy
 from sqlmodel.modules import Modules
@@ -19,24 +19,30 @@ authorization_route = APIRouter(
 @authorization_route.get("/")
 async def get_data_Auth_UI(jwt_dependency: jwt_dependecy, user:str=None):
     not_matched_result = []
-    def verificar(mdl, permi, lista):
-        for i in lista:
-            if mdl == i[0] and permi == i[1]:
-                return True
-        return False
     try:
-        # session.expire_all()  # Expira todos los objetos de la sesión
-        response1 = session.query(Modules).all()
-        response2 = session.query(Permissions).all()
-        response3 = session.query(User_perm_mdl).filter(User_perm_mdl.c.user == user).all()
-        session.close()
+        #nueva consulta
+        results = session.query(Modules.c.mdlCode, Modules.c.mdlName, Permissions.c.permCode, Permissions.c.permName, User_perm_mdl.c.user). \
+            join(Modules, Permissions.c.mdlCode == Modules.c.mdlCode). \
+            join(User_perm_mdl, and_(User_perm_mdl.c.permCode == Permissions.c.permCode, User_perm_mdl.c.user == user), isouter=True). \
+            all()
+        
+        modules = {}
 
-        not_matched_result = list(map(lambda x: {'code': x[0],
-                                                'name': x[1],
-                                                'perm': list(map(lambda y: {'code': y[0],
-                                                                            'name': y[1],
-                                                                            'enabled': verificar(x[0], y[0], response3)}, response2))
-                                                 }, response1))
+        for mdl_code, mdl_name, perm_code, perm_name, user in results:
+            if mdl_code not in modules:
+                modules[mdl_code] = {
+                    "code": mdl_code,
+                    "name": mdl_name,
+                    "perm": []
+                }
+            modules[mdl_code]["perm"].append({
+                "code": perm_code,
+                "name": perm_name,
+                "enabled": user is not None  # True si hay texto, False si es None
+            })
+
+        not_matched_result = list(modules.values())
+
     except Exception as e:
         session.rollback()
         not_matched_result = str(e)
@@ -48,7 +54,10 @@ async def get_data_Auth_UI(jwt_dependency: jwt_dependecy, user:str=None):
 async def get_user_permissions_by_module(jwt_dependency: jwt_dependecy, user:str=None, module:str=None):
     returned_value = []
     try:
-        response = session.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user, User_perm_mdl.c.mdlCode == module).all()
+        if module is not None:
+            response = session.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user, User_perm_mdl.c.mdlCode == module).all()
+        else:
+            response = session.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user).all()
         session.close()
         returned_value = list(map(lambda x: x[0], response))
     except Exception as e:
