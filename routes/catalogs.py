@@ -23,6 +23,7 @@ async def Get_Taxes(type: str = None , jwt_dependency: jwt_dependecy = None):
         if type is not None and type == 's': #sell
             stmt = (select(OAFV).filter(OAFV.c.IsActive == 'Y'))
             returned_value = session.execute(stmt).mappings().all()
+            print(returned_value)
     except Exception as e:
         session.rollback()
         session.close()
