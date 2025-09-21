@@ -13,8 +13,8 @@ warehouse_route = APIRouter(
 )
 
 @warehouse_route.get("/", status_code=200)
-def get_ware_house(jwt_dependency: jwt_dependecy):
-# def get_ware_house():
+# def get_ware_house(jwt_dependency: jwt_dependecy):
+def get_ware_house():
     returned = False
     try:
         # if not(jwt_dependency):
