@@ -116,55 +116,6 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
                 status_code=200,
                 content={"result": result}
                 )
-            
-@product_route.get("/publisher", status_code=200)
-async def Get_All_Publishers(jwt_dependency: jwt_dependecy):
-    returned = []
-    try:
-        results = session.query(Product.c.publisher).distinct().all()
-        returned = list(map(get_all_publishers,enumerate(results)))
-    except Exception as e:
-        print("rollback")
-        session.rollback()
-        print(f"An error ocurred: {e}")
-        returned = []
-    finally:
-        session.close()
-        return returned
-
-@product_route.get("/price", status_code=200)
-async def get_price_by_ware_house(
-                                    idWare: Optional[int] = 1,
-                                    isbn: Optional[str] = "",
-                                ):
-    status = False
-    result = (None, None)
-    try:
-        if bool(idWare) or bool(isbn):
-            query = f"p.title, p.autor, p.publisher, wp.pvNew from ware_product wp inner join genesisDB.product p on p.id = wp.idProduct where isbn like '%{isbn}%' and idWare={str(idWare)} and isEnabled = True;"
-            productPrice = session.execute(select(text(query)))
-            data = productPrice.fetchall()
-            (title, autor, publisher, pvNew) = ((data[0][0], data[0][1], data[0][2], data[0][3]) if ((data is not None) and (len(data) == 1)) else (None, None, None, None))
-            if not title:
-                status = False
-            else:
-                status = True
-                result = {"productDetail": f"{title.replace('Ñ','N').replace('¡', '!')} - {autor.replace('Ñ','N').replace('¡', '!')} - {publisher.replace('ñ','n').replace('¡', '!')}",
-                          "productPrice": f"{str(pvNew)}"}
-        else:
-            raise HTTPException(status_code=404, detail='Nothing to show you')
-    except:
-        session.rollback()
-        # raise
-    finally:
-        session.close()
-        if not status:
-            raise HTTPException(status_code=404, detail='Nothing to show you')
-        elif status:
-            return JSONResponse(
-            status_code=200,
-            content= result
-            )
         
 @product_route.post("/request_maintenance", status_code=200)
 async def request_product_maintenance(jwt_dependency: jwt_dependecy, product_maintenance: product_maintenance):

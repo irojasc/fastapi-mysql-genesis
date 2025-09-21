@@ -1,5 +1,5 @@
-from sqlalchemy import Table, Column
-from sqlalchemy.sql.sqltypes import Integer, String, Date, _Binary
+from sqlalchemy import Table, Column, text
+from sqlalchemy.sql.sqltypes import Integer, String, Date, _Binary, DECIMAL
 from config.db import meta, engine
 
 Product = Table("product", meta, 
@@ -24,5 +24,14 @@ Product = Table("product", meta,
                 Column("antique", _Binary, default=None),
                 Column("isDelete", _Binary, default=None),
                 Column("atWebProm", _Binary, default=None),
+                Column("InvntItem", String(1), nullable=False, default=None), # es articulo inventariable?
+                Column("SellItem", String(1), nullable=False, default=None), # es articulo venta?
+                Column("BuyItem", String(1), nullable=False, default=None), # es articulo compra?
+                Column("InvntryUom", String(3), nullable=False, default=None), #unidad de inventario (Aplica para venta/compra)
+                Column("LastPurPrc", DECIMAL(8, 2), nullable=False, server_default=text("0.0")), #ultimo precio de compra
+                Column("AvgPrice", DECIMAL(8, 2), nullable=False, server_default=text("0.0")), #precio promedio
+                Column("CardCode", String(15), default=None), #proveedor por defecto
+                Column("VatBuy", String(8), default=None), #impuesto compra
+                Column("VatSell", String(2), default=None), #impuesto venta
                 )
 meta.create_all(bind=engine)

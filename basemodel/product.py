@@ -50,3 +50,10 @@ class ware_product_(BaseModel):
     antique: Optional[bool] = None
     atWebProm: Optional[bool] = None
     waredata: list[ware_product_data]
+    CardCode: Optional[str]= None
+    InvntItem: Optional[str] =  'Y'
+    SellItem: Optional[str] =  'Y'
+    BuyItem: Optional[str] =  'Y'
+    InvntryUom: Optional[str] =  'NIU'
+    VatBuy: Optional[str] = None
+    VatSell: Optional[str] = None

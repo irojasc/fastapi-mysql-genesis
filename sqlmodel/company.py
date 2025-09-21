@@ -16,6 +16,7 @@ Company = Table("company", meta,
                 Column("CardCond", String(100), nullable=True),
                 Column("BusinessName", String(100), nullable=True),
                 Column("TermCode", String(10), nullable=False),
-                Column("UserSign", String(15), nullable=True)
+                Column("UserSign", String(15), nullable=True),
+                Column("Currency", String(3), nullable=True, default=None)
                 )
 meta.create_all(bind=engine)

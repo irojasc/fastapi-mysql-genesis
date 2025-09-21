@@ -8,36 +8,45 @@ def changeBin2Bool(data):
 def get_all_inventory_data(data: list = []):
     tmpList = []
     for item in data:
-        index = next((i for i, item_ in enumerate(tmpList) if item_["product"]["prdCode"] == '%s_%d' % (item[1], item[2])), None)
+        index = next((i for i, item_ in enumerate(tmpList) if item_["product"]["prdCode"] == '%s_%d' % (item["item_code"], item["id_product"])), None)
         if index is None:
             dict_data = {
                 "product": {
-                "id": item[2],
-                "prdCode": '%s_%d' % (item[1], item[2]),
-                "isbn": '' if item[3] is None else item[3],
-                "title": item[4],
-                "autor": item[5],
-                "publisher": item[6],
-                "dateOut": item[7].strftime('%Y-%m-%d') if bool(item[7]) else None,
-                "lang": item[8],
-                "pages": item[9],
-                "weight": item[10],
-                "cover": None if item[11] is None else changeBin2Bool(item[11]),
-                "width": item[12],
-                "height": item[13],
+                "id": item["id_product"],
+                "prdCode": '%s_%d' % (item["item_code"], item["id_product"]),
+                "isbn": '' if item["isbn"] is None else item["isbn"],
+                "title": item["title"],
+                "autor": item["autor"],
+                "publisher": item["publisher"],
+                "dateOut": item["dateOut"].strftime('%Y-%m-%d') if bool(item["dateOut"]) else None,
+                "lang": item["language"],
+                "pages": item["pages"],
+                "weight": item["weight"],
+                "cover": None if item["cover"] is None else changeBin2Bool(item["cover"]),
+                "width": item["width"],
+                "height": item["height"],
                 "content": None,
                 "itemCategory": None,
-                "isDelete": False if item[24] is None else changeBin2Bool(item[24]),
+                "isDelete": False if item["isDelete"] is None else changeBin2Bool(item["isDelete"]),
+                ##NUEVOS CAMPOS PARA FACTURACION
+                "InvntItem": item["InvntItem"], 
+                "SellItem": item["SellItem"], 
+                "BuyItem": item["BuyItem"], 
+                "InvntryUom": item["InvntryUom"], 
+                "LastPurPrc": item["LastPurPrc"], 
+                "LastProvider": item["LastProvider"], 
+                "VatBuy": item["VatBuy"], 
+                "VatSell": item["VatSell"]
                 },
                 "wareData": {}
             }
-            dict_data["wareData"][item[0]] = {"qtyNew": item[14], "qtyOld": item[15], "qtyMinimun": item[16] , "qtyMaximum": item[23], "pvNew": item[17], "pvOld": item[18], "loc": item[19], "isEnabled": changeBin2Bool(item[20]), "dsct": item[21], "idWare": item[22]}
+            dict_data["wareData"][item["ware_code"]] = {"qtyNew": item["qtyNew"], "qtyOld": item["qtyOld"], "qtyMinimun": item["qtyMinimun"] , "qtyMaximum": item["qtyMaximum"], "pvNew": item["pvNew"], "pvOld": item["pvOld"], "loc": item["loc"], "isEnabled": changeBin2Bool(item["isEnabled"]), "dsct": item["dsct"], "idWare": item["idWare"]}
             tmpList.append(dict_data)
         else:
-            tmpList[index]["wareData"][item[0]] = {"qtyNew": item[14], "qtyOld": item[15], "qtyMinimun": item[16] , "qtyMaximum": item[23], "pvNew": item[17], "pvOld": item[18], "loc": item[19], "isEnabled": changeBin2Bool(item[20]), "dsct": item[21], "idWare": item[22]}
+            tmpList[index]["wareData"][item["ware_code"]] = {"qtyNew": item["qtyNew"], "qtyOld": item["qtyOld"], "qtyMinimun": item["qtyMinimun"] , "qtyMaximum": item["qtyMaximum"], "pvNew": item["pvNew"], "pvOld": item["pvOld"], "loc": item["loc"], "isEnabled": changeBin2Bool(item["isEnabled"]), "dsct": item["dsct"], "idWare": item["idWare"]}
 
     return tmpList
-
+    
 def get_all_active_transfer(data: list = []):
     myList = []
     try:

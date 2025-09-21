@@ -7,6 +7,7 @@ from config.db import con, session
 from sqlmodel.company import Company
 from sqlmodel.banks import Banks
 from sqlmodel.paymentterms import PaymentTerms
+from sqlmodel.ocur import OCUR
 from sqlmodel.companycontacts import CompanyContacts
 from sqlmodel.companyaccounts import CompanyAccounts
 from basemodel.company import BusinessPartner
@@ -19,8 +20,9 @@ company_route = APIRouter(
     tags=['Company']
 )
 
-@company_route.get("/bussines_partner/", status_code=200)
+@company_route.get("/business_partner/", status_code=200)
 async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jwt_dependecy = None):
+    """La parte de obtener Business partner por CardCode no esta desarrollada"""
     returnedValue = {"body": {}, "message": "ok"}
     status_code = 200
     try:
@@ -36,6 +38,10 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
             #Consulta terminos de pago
             paymentterms = session.query(PaymentTerms.c.TermCode, PaymentTerms.c.TermName) \
             .order_by(PaymentTerms.c.TermName.asc()) \
+            .all()
+
+            #Consulta monedas
+            currency = session.query(OCUR.c.CurrCode, OCUR.c.CurrName) \
             .all()
 
             returnedValue.update({"body":{
@@ -54,10 +60,13 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
                     "1": {"nombre": None, "telefono": None, "correo": None, "default": True},
                     "2": {"nombre": None, "telefono": None, "correo": None, "default": False}
                 },
-                "cuenta_bancaria": {"tipo_cuenta": None, "tipo_moneda": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None },
-                "condicion_pago": "CASH",
+                # "cuenta_bancaria": {"tipo_cuenta": None, "tipo_moneda": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None },
+                "cuenta_bancaria": {"tipo_cuenta": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None }, #tipo de moneda sale por que ira en condiciones generales
+                "condicion_pago": "CASH", #SE DEFINE POR DEFECTO CONTADO
+                "moneda": "PEN", #SE DEFINE POR DEFECTO SOLES
                 "bancos": list(map(lambda x: {"id": x[0], "name": x[1]}, banks)),
-                "condiciones_pago": list(map(lambda x: {"id": x[0], "name": x[1]}, paymentterms))
+                "condiciones_pago": list(map(lambda x: {"id": x[0], "name": x[1]}, paymentterms)),
+                "monedas": list(map(lambda x: {"id": x[0], "name": x[1]}, currency))
             }})
 
     except Exception as e:
@@ -72,7 +81,7 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
             content=returnedValue
         )
 
-@company_route.post("/bussines_partner/", status_code=201)
+@company_route.post("/business_partner/", status_code=201)
 async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency: jwt_dependecy = None):
     returnedValue = {"body": {}, "message": "Socio creado!!"}
     status_code = 201
@@ -102,13 +111,14 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                 CardCond= BusinessPartner.condicion or None,
                 BusinessName= BusinessPartner.nombre_comercial or None,
                 TermCode= BusinessPartner.condicion_pago or None,
-                UserSign= BusinessPartner.usuario_creacion or None
+                UserSign= BusinessPartner.usuario_creacion or None,
+                Currency= BusinessPartner.moneda or None
             )
         )
         res_partner = session.execute(stmt)
         session.commit()
         rowsAffected = res_partner.rowcount
-        print(rowsAffected)
+        # print(rowsAffected)
         if(rowsAffected > 0): #VERIFICA QUE REGISTRA SOCIO PARA REGISTRAR CONTACTOS Y CUENTAS
             #CREA CONTACTOS
             if len(BusinessPartner.contactos) > 0:
@@ -141,7 +151,6 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                             cardCode=defineCardCode,
                             LineId=bankAccount.id,
                             AccountType=bankAccount.tipo_cuenta,
-                            Currency=bankAccount.tipo_moneda,
                             BankCodeApi=bankAccount.banco,
                             AccountNumber=bankAccount.n_cuenta,
                             InterbankNumber=bankAccount.n_cci,
@@ -159,7 +168,7 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                 print("No registra cuenta bancaria")
             
             #RETORNAR SOCIO CREADO
-            value = await Get_All_Bussines_Partners_By_Param(CardCode=defineCardCode)
+            value = await Get_All_Business_Partners_By_Param(CardCode=defineCardCode)
             returnedValue.update({"body": value})
 
         else:
@@ -213,8 +222,8 @@ async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None, 
         session.close()
         return returned
 
-@company_route.get("/get_user_data_from_sunat_reniec/", status_code=200)
-async def Get_User_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', jwt_dependency: jwt_dependecy = None):
+@company_route.get("/get_partner_data_from_sunat_reniec/", status_code=200)
+async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', jwt_dependency: jwt_dependecy = None):
     """IMPORTANTE, ༼ つ ◕_◕ ༽つ DEBE SER EL MISMO FORMATO SI CAMBIA DE PROVEEDOR VVVV \n
     CUANDO NO EXISTE UBIGEO, RETORNA '-'
     """
@@ -261,37 +270,43 @@ async def Get_User_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', jwt
 
 
 @company_route.get("/get_all_business_partners", status_code=200)
-async def Get_All_Bussines_Partners_By_Param(CardType:str=None, CardCode:str=None, jwt_dependency: jwt_dependecy = None):
+async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=None, jwt_dependency: jwt_dependecy = None):
     #ACEPTARA PARAMETROS, C Y S: DONDE C es customer y S es Supplier
     returned = []
     try:
         if CardCode is None:
             if CardType is not None:
-                results = session.query(Company, CompanyContacts.c.Name, CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name). \
-                join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True). \
-                join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
-                where(Company.c.type == CardType). \
-                where(Company.c.active == 1). \
-                order_by(asc(Company.c.docName)). \
-                all()
+                stmt = (
+                    select(Company, CompanyContacts.c.Name.label("contact_name"), CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name)
+                    .join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True)
+                    .join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True)
+                    .where(Company.c.type == CardType)
+                    .where(Company.c.active == 1)
+                    .order_by(asc(Company.c.docName))
+                )
+                results = session.execute(stmt).mappings().all() #obtine en formato diccionario
                 returned = list(map(get_all_companies,results))
+
             else: #si es None, trae todo los resultados
-                results = session.query(Company, CompanyContacts.c.Name, CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name). \
-                join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True). \
-                join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
-                where(Company.c.active == 1). \
-                order_by(asc(Company.c.docName)). \
-                all()
+                stmt = (
+                    select(Company, CompanyContacts.c.Name.label("contact_name"), CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name)
+                    .join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True)
+                    .join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True)
+                    .where(Company.c.active == 1)
+                    .order_by(asc(Company.c.docName))
+                )
+                results = session.execute(stmt).mappings().all() #obtine en formato diccionario
                 returned = list(map(get_all_companies,results))
         else:
-            socio = session.query(Company, CompanyContacts.c.Name, CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name). \
-                join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True). \
-                join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True). \
-                where(Company.c.cardCode == CardCode).\
-                first()
-            #cuando existe socio es una tuple
-            value = list(map(get_all_companies, [socio] if not(isinstance(socio, list)) else []))
-            returned = value[0]
+            stmt = (
+                select(Company, CompanyContacts.c.Name.label("contact_name"), CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name)
+                .join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True)
+                .join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True)
+                .where(Company.c.cardCode == CardCode)
+            )
+            socio = session.execute(stmt).mappings().first() #obtine en formato diccionario
+            value = list(map(get_all_companies, [socio] if (socio is not None) and not(isinstance(socio, list)) else []))
+            returned = value[0] if len(value) else {}
 
     except Exception as e:
         print("rollback")

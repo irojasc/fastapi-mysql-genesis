@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text, desc, asc, or_, func, and_, null
+from sqlalchemy import select, text, desc, asc, or_, func, and_, null, literal
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import SQLAlchemyError
 from utils.validate_jwt import jwt_dependecy
 from utils.converters import binary2bool
@@ -13,6 +14,7 @@ from sqlmodel.transfer import Transfer
 from sqlmodel.ware_product import Ware_Product
 from sqlmodel.transfer_product import Transfer_Product
 from sqlmodel.operation_reason import Operation_Reason
+from sqlmodel.uom import UOM
 from sqlmodel.company import Company
 # from functions.product import get_all_publishers
 from functions.inventory import get_all_inventory_data, get_all_active_transfer
@@ -20,6 +22,9 @@ from sqlalchemy import insert, delete, update
 from basemodel.inventory import InOut_Qty, WareProduct
 from basemodel.product import ware_product_
 from basemodel.ware import ware_edited
+from routes.company import Get_All_Business_Partners_By_Param
+from routes.catalogs import Get_Taxes
+from decimal import Decimal
 import json
 from datetime import datetime
 
@@ -28,27 +33,56 @@ inventory_route = APIRouter(
     tags=['Inventory']
 )
 
+# json_object = json.dumps(result_format, indent=4, default=repr).encode('utf8')
+            # json_object = json.dumps(result_format, ensure_ascii=False).encode('utf8')
+            # outfile.write(str(json_object, 'utf-8'))
+            # outfile.write(json_object)
 #aqui falta agregar la parte donde solo algunos pueden ejecutar este comando
+
 @inventory_route.get("/", status_code=200)
-# async def Get_All_Inventory_and_Data_Product(token_key: str, jwt_dependency: jwt_dependecy):
-async def Get_All_Inventory_and_Data_Product(token_key: str, jwt_dependency: jwt_dependecy):
+async def Get_All_Inventory_and_Data_Product(token_key: str = None, idProduct: int = None, jwt_dependency: jwt_dependecy = None):
+    def convert_decimal(obj):
+        if isinstance(obj, Decimal):
+            return float(obj)   # 👈 o str(obj) si quieres conservar exactitud
+        raise TypeError
+    
+    def get_statement(idProduct:int=None):
+        stmt = (select(Ware.c.code.label("ware_code"), Item.c.code.label("item_code"), Product.c.id.label("id_product"), Product.c.isbn, Product.c.title, Product.c.autor, 
+            Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
+            Product.c.cover, Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, 
+            Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld, Ware_Product.c.loc, 
+            Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, 
+            Product.c.isDelete, Product.c.InvntItem, Product.c.SellItem, Product.c.BuyItem, Product.c.InvntryUom, 
+            Product.c.LastPurPrc, literal(None).label("LastProvider"), Product.c.VatBuy, Product.c.VatSell). \
+            join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
+            join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
+            join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
+            join(Item, Product.c.idItem == Item.c.id).\
+            order_by(asc(Product.c.id))
+            )
+        
+        if idProduct is not None:
+            stmt = stmt.filter(Product.c.id == idProduct)
+        
+        results = session.execute(stmt).mappings().all() #retorna en formato diccionario
+        return get_all_inventory_data(results)
+
     returned = False
     try:
-        if token_key == 'CHUSPa@123':
-            results = session.query(Ware.c.code, Item.c.code, Product.c.id,Product.c.isbn, Product.c.title, Product.c.autor, 
-                                    Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, Product.c.cover,
-                                    Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld,
-                                    Ware_Product.c.loc, Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, Product.c.isDelete). \
-                                    join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
-                                    join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
-                                    join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
-                                    join(Item, Product.c.idItem == Item.c.id).order_by(asc(Product.c.id)).all()
-            result_format = get_all_inventory_data(results)
-            json_object = json.dumps(result_format, indent=4, default=repr).encode('utf8')
-            with open("sample.json", "w", encoding='utf8') as outfile:
-                json_object = json.dumps(result_format, ensure_ascii=False).encode('utf8')
-                outfile.write(str(json_object, 'utf-8'))
-            returned = True
+        if bool(token_key):
+            if token_key == 'CHUSPa@123':
+                result_format = get_statement() #cuando va vacio, trae todos los resultados
+
+                with open("sample.json", "w", encoding='utf8') as outfile:
+                    json.dump(result_format, outfile, ensure_ascii=False, default=convert_decimal, indent=4)
+                returned = True
+            else:
+                #aqui retorna clave incorrecta, false por ahora
+                pass
+        elif bool(idProduct) and idProduct > 0:
+                result_format = get_statement(idProduct=idProduct) #cuando va vacio, trae todos los resultados
+                returned = result_format
+
     except Exception as e:
         print(f"Get_All_Inventory_and_Data_Product/nopair:get:An error ocurred: {e}")
     except SQLAlchemyError as e:
@@ -62,20 +96,25 @@ async def Get_All_Inventory_and_Data_Product(token_key: str, jwt_dependency: jwt
 async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01', jwt_dependency: jwt_dependecy = None):
     returned = False
     try:
-        innerDate = datetime.strptime(inputDate, "%Y-%m-%d")
+        # innerDate = datetime.strptime(inputDate, "%Y-%m-%d")
 
         # subquery_ = session.query(Product.c.id).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True).join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True).join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id).filter(or_(Product.c.creationDate >= inputDate, Product.c.editDate >= inputDate, Ware_Product.c.creationDate >= inputDate, Ware_Product.c.editDate >= inputDate)).subquery()
         subquery_ = select(Product.c.id).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True).join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True).join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id).filter(or_(Product.c.creationDate >= inputDate, Product.c.editDate >= inputDate, Ware_Product.c.creationDate >= inputDate, Ware_Product.c.editDate >= inputDate))
+
         #get select subquery sqlalchemy?
-        results = session.query(Ware.c.code, Item.c.code, Product.c.id,Product.c.isbn, Product.c.title, Product.c.autor, 
-                                Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
-                                Product.c.cover, Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, 
-                                Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld, Ware_Product.c.loc, 
-                                Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, Product.c.isDelete). \
-                                join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
-                                join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
-                                join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id). \
-                                filter(Product.c.id.in_(subquery_)).order_by(asc(Product.c.id)).all()
+        stmt = (select(Ware.c.code.label("ware_code"), Item.c.code.label("item_code"), Product.c.id.label("id_product"), Product.c.isbn, Product.c.title, Product.c.autor, 
+                    Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
+                    Product.c.cover, Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, 
+                    Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld, Ware_Product.c.loc, 
+                    Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, 
+                    Product.c.isDelete, Product.c.InvntItem, Product.c.SellItem, Product.c.BuyItem, Product.c.InvntryUom, 
+                    Product.c.LastPurPrc, literal(None).label("LastProvider"), Product.c.VatBuy, Product.c.VatSell). \
+                    join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
+                    join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
+                    join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id). \
+                    filter(Product.c.id.in_(subquery_)).order_by(asc(Product.c.id)))
+        
+        results = session.execute(stmt).mappings().all() #obtine en formato diccionario
         result_format = get_all_inventory_data(results)
         returned = result_format
     except Exception as e:
@@ -143,7 +182,57 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             #ANTIQUE
             body.update({'antique': False})
 
-            body.update({'webprom': False }) #WEBPROMOTION
+            #WEBPROMOTION
+            body.update({'webprom': False })
+
+            #CardCode
+            body.update({'CardCode': None })
+
+            #BusinessPartner (opciones para que muestren en el frond)
+            list_ = await Get_All_Business_Partners_By_Param(CardType='S') #obtine proveedores
+            if isinstance(list_, list):
+                list_modified = list(map(lambda x: {"CardCode": x["CardCode"], "CardName": x["CardName"]}, list_))
+                body.update({'BusinessPartners': list_modified})
+            else:
+                body.update({'BusinessPartners': []})
+
+            #
+            body.update({'InvntItem': 'N'})
+            body.update({'SellItem': 'N'})
+            body.update({'BuyItem': 'N'})
+          
+            #Unidades de inventario 
+            body.update({'InvntryUom': 'NIU'}) #ESTO IRA POR DEFECTO
+
+            #(opciones para unidades)
+            list_units = await Get_All_Units_Of_Measurement() #obtine unidades
+            if isinstance(list_units, list):
+                body.update({'UOMS': [dict(x) for x in list_units]})
+            else:
+                body.update({'UOMS': []})
+            #
+
+            #taxes compra
+            body.update({'VatBuy': None})
+
+            #opciones para impuesto compra
+            list_pur_taxes = await Get_Taxes(type='p') #purchase
+            if isinstance(list_pur_taxes, list):
+                body.update({'Pur_Taxes': [{'VatCode': item['VatCode'], 'VatName': item['VatName'].upper()} for item in list_pur_taxes]})
+            else:
+                body.update({'Pur_Taxes': []})
+            #
+         
+            #taxes venta
+            body.update({'VatSell': None})
+
+            #opciones para impuesto venta
+            list_sel_taxes = await Get_Taxes(type='s') #sell
+            if isinstance(list_sel_taxes, list):
+                body.update({'Sel_Taxes': [{'Code': item['Code'], 'Name': item['Name']} for item in list_sel_taxes]})
+            else:
+                body.update({'Sel_Taxes': []})
+            #
 
             #WAREDATA
             # wareDataList = session.query(Ware.c.code, Ware.c.isVirtual).all()
@@ -179,34 +268,88 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             "object": body
             }   
             return JSONResponse(content=content, status_code=200)
+        
         else: #CASO 2| EDITAR ARTICULO EXISTENTE
-            #PRODUCT
-            product = session.query(Product, Item.c.code, Language.c.code). \
-                                join(Item, Product.c.idItem == Item.c.id). \
-                                outerjoin(Language, Product.c.idLanguage == Language.c.id). \
-                                filter(Product.c.id == int(idProduct)).first()
-            body.update({'id': str(product[0])}) #ID
+            stmt = (
+                select(Product, Item.c.code.label("item_code"), Language.c.code.label("lang_code"))
+                .join(Item, Product.c.idItem == Item.c.id)
+                .outerjoin(Language, Product.c.idLanguage == Language.c.id)
+                .where(Product.c.id == int(idProduct))
+            )
+
+            product = session.execute(stmt).mappings().first() #obtine en formato diccionario
+
+            # #PRODUCT
+            body.update({'id': str(product["id"])}) #ID
             body.update({'item': {
-                'itemCode': product[21] or None,
+                'itemCode': product["item_code"] or None,
                 'options': list(map(lambda idx: {'code': idx[0], 'name': idx[1]}, itemList))}}) #ID
-            body.update({'isbn': product[2] or None}) #ISBN
-            body.update({'title': product[3] or None}) #TITLE
-            body.update({'autor': product[4] or None}) #AUTOR
-            body.update({'publisher': product[5] or None}) #PUBLISHER
-            body.update({'release': str(product[7].year or '') if bool(product[7]) else None}) #RELEASE
-            body.update({'pages': product[9] or None}) #PAGES
+            body.update({'isbn': product["isbn"] or None}) #ISBN
+            body.update({'title': product["title"] or None}) #TITLE
+            body.update({'autor': product["autor"] or None}) #AUTOR
+            body.update({'publisher': product["publisher"] or None}) #PUBLISHER
+            body.update({'release': str(product["dateOut"].year or '') if bool(product["dateOut"]) else None}) #RELEASE
+            body.update({'pages': product["pages"] or None}) #PAGES
             body.update({'language': {
-                'langCode': product[22] or None,
+                'langCode': product["lang_code"] or None,
                 'options': list(map(lambda idx: {'code': idx[0], 'name': idx[1]}, langList))}}) #LANGUAGE
-            body.update({'weight': product[10] or None}) #WEIGHT
-            body.update({'large': product[16] or None}) #LARGE
-            body.update({'width': product[12] or None}) #WIDTH
-            body.update({'height': product[13] or None}) #HEIGHT
-            body.update({'cover': None if product[11] is None else binary2bool(product[11])}) #COVER
-            body.update({'summary': product[6] or ''}) #SUMMARY
-            body.update({'wholesale': False if product[17] is None else binary2bool(product[17])}) #WHOLESALE
-            body.update({'antique': False if product[18] is None else binary2bool(product[18])}) #ANTIQUE
-            body.update({'webprom': False if product[20] is None else binary2bool(product[20])}) #WEBPROMOTION
+            body.update({'weight': product["weight"] or None}) #WEIGHT
+            body.update({'large': product["large"] or None}) #LARGE
+            body.update({'width': product["width"] or None}) #WIDTH
+            body.update({'height': product["height"] or None}) #HEIGHT
+            body.update({'cover': None if product["cover"] is None else binary2bool(product["cover"])}) #COVER
+            body.update({'summary': product["content"] or ''}) #SUMMARY
+            body.update({'wholesale': False if product["wholesale"] is None else binary2bool(product["wholesale"])}) #WHOLESALE
+            body.update({'antique': False if product["antique"] is None else binary2bool(product["antique"])}) #ANTIQUE
+            body.update({'webprom': False if product["atWebProm"] is None else binary2bool(product["atWebProm"])}) #WEBPROMOTION
+            body.update({'CardCode': product["CardCode"]}) #proveedor
+
+            #BusinessPartner (opciones para que muestren en el frond)
+            list_ = await Get_All_Business_Partners_By_Param(CardType='S') #obtine proveedores
+            if isinstance(list_, list):
+                list_modified = list(map(lambda x: {"CardCode": x["CardCode"], "CardName": x["CardName"]}, list_))
+                body.update({'BusinessPartners': list_modified})
+            else:
+                body.update({'BusinessPartners': []})
+
+            #
+            body.update({'InvntItem': product["InvntItem"]})
+            body.update({'SellItem': product["SellItem"]})
+            body.update({'BuyItem': product["BuyItem"]})
+
+            #Unidades de inventario 
+            body.update({'InvntryUom': product["InvntryUom"]})
+
+            #(opciones para unidades)
+            list_units = await Get_All_Units_Of_Measurement() #obtine unidades
+            if isinstance(list_units, list):
+                body.update({'UOMS': [dict(x) for x in list_units]})
+            else:
+                body.update({'UOMS': []})
+            #
+
+            #taxes compra
+            body.update({'VatBuy': product["VatBuy"]})
+
+            #opciones para impuesto compra
+            list_pur_taxes = await Get_Taxes(type='p') #purchase
+            if isinstance(list_pur_taxes, list):
+                body.update({'Pur_Taxes': [{'VatCode': item['VatCode'], 'VatName': item['VatName'].upper()} for item in list_pur_taxes]})
+            else:
+                body.update({'Pur_Taxes': []})
+            #
+         
+            #taxes venta
+            body.update({'VatSell': product["VatSell"]})
+
+            #opciones para impuesto venta
+            list_sel_taxes = await Get_Taxes(type='s') #sell
+            if isinstance(list_sel_taxes, list):
+                body.update({'Sel_Taxes': [{'Code': item['Code'], 'Name': item['Name']} for item in list_sel_taxes]})
+            else:
+                body.update({'Sel_Taxes': []})
+            #
+
             #WAREDATA
             # SE OBTIENE DATA DE WARE QUE SOLO ESTA ACTIVO
             wareData = session.query(Ware.c.code, Ware_Product, Ware.c.isVirtual). \
@@ -228,8 +371,9 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
                         }
                 })
             body.update({'waredata': waredata})
-            body.update({'isDelete': False if product[19] is None else binary2bool(product[19])}) #ISDELETE
+            body.update({'isDelete': False if product["isDelete"] is None else binary2bool(product["isDelete"])}) #ISDELETE
             body.update({'formDate': ''})
+
             session.close()
 
             content = {
@@ -237,6 +381,7 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             "message": "Todo ok!",
             "object": body
             }   
+            
             return JSONResponse(content=content, status_code=200)
     except Exception as e:
         print(f"Get_WareHouse_Product_By_Id :get:An error ocurred: {e}")
@@ -589,7 +734,7 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
         session.close()
         return response
 
-@inventory_route.patch("/product", status_code=200)
+@inventory_route.patch("/product/", status_code=200)
 async def update_warehouse_product(product_: ware_product_ = None, jwt_dependency: jwt_dependecy = None):
     try:
         stock_checked = 0
@@ -659,7 +804,14 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                 large=product_.large,
                 wholesale=b'\x01' if bool(product_.wholesale) else None,
                 antique=b'\x01' if bool(product_.antique) else None,
-                atWebProm=b'\x01' if bool(product_.atWebProm) else None
+                atWebProm=b'\x01' if bool(product_.atWebProm) else None,
+                CardCode=product_.CardCode,
+                InvntItem=product_.InvntItem,
+                SellItem=product_.SellItem,
+                BuyItem=product_.BuyItem,
+                InvntryUom=product_.InvntryUom,
+                VatBuy=product_.VatBuy,
+                VatSell=product_.VatSell
             )
             
             # Ejecutar la instrucción de actualización
@@ -715,25 +867,16 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             session.commit()
             session.close()
 
-            results = session.query(Ware.c.code, Item.c.code, Product.c.id,Product.c.isbn, Product.c.title, Product.c.autor, 
-                        Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, Product.c.cover,
-                        Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld,
-                        Ware_Product.c.loc, Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, Product.c.isDelete). \
-                        join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
-                        join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
-                        join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
-                        join(Item, Product.c.idItem == Item.c.id).filter(Product.c.id == product_.id).all()
-            
-            session.close()
-            result_format = get_all_inventory_data(results)
-            
+            result_format = await Get_All_Inventory_and_Data_Product(idProduct=product_.id)
+
             # Retornar el número de filas afectadas (puedes también retornar algo más si lo necesitas)
+            print(result_format)
             content = {
                 "success": True,
                 "message": "Producto actualizado con éxito",
                 "object": result_format[0]
             }
-            return JSONResponse(content=content, status_code=200)
+            return JSONResponse(content=jsonable_encoder(content), status_code=200)
         else:
             content = {
                 "success": False,
@@ -743,6 +886,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             return JSONResponse(content=content, status_code=406)
         
     except Exception as e:
+        print(f"An error ocurred: {e}")
         content = {
             "success": False,
             "message": f"An error ocurred: {e}",
@@ -760,7 +904,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         }
         return JSONResponse(content=content, status_code=500)
 
-@inventory_route.post("/product", status_code=200)
+@inventory_route.post("/product/", status_code=200)
 async def create_warehouse_product(product_: ware_product_ = None, jwt_dependency: jwt_dependecy = None):
     def buscar_valor(lista, clave):
         for item in lista:
@@ -799,12 +943,18 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             large=product_.large,
             wholesale=b'\x01' if bool(product_.wholesale) else None,
             antique=b'\x01' if bool(product_.antique) else None,
-            atWebProm=b'\x01' if bool(product_.atWebProm) else None
+            atWebProm=b'\x01' if bool(product_.atWebProm) else None,
+            CardCode=product_.CardCode,
+            InvntItem=product_.InvntItem,
+            SellItem=product_.SellItem,
+            BuyItem=product_.BuyItem,
+            InvntryUom=product_.InvntryUom,
+            VatBuy=product_.VatBuy,
+            VatSell=product_.VatSell
         )
 
         result = session.execute(stmt)
     
-
         if result.rowcount > 0:
             #continua agregando los datos de los almacenes
             for dato in product_.waredata: #solo los wares que existen
@@ -830,30 +980,21 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                     break
 
             session.commit()
-            session.close()
 
-            results = session.query(Ware.c.code, Item.c.code, Product.c.id,Product.c.isbn, Product.c.title, Product.c.autor, 
-            Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, Product.c.cover,
-            Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld,
-            Ware_Product.c.loc, Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, Product.c.isDelete). \
-            join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
-            join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
-            join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
-            join(Item, Product.c.idItem == Item.c.id).filter(Product.c.id == product_.id).all()
-            
-            session.close()
-            result_format = get_all_inventory_data(results)
+            result_format = await Get_All_Inventory_and_Data_Product(idProduct=product_.id) #consulta ware product creado
+
+            session.close() #cierra conexion si todo va bien
 
             content = {
                 "success": True,
                 "message": f"¡Producto registrado!",
-                "object": result_format[0]
+                "object": result_format[0] #devuelve ware product creado
             }
-            return JSONResponse(content=content, status_code=200)
+            return JSONResponse(content=jsonable_encoder(content), status_code=200)
         
-        session.close()
     
     except Exception as e:
+        session.close()
         content = {
             "success": False,
             "message": f"An error ocurred: {e}",
@@ -871,5 +1012,24 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         }
         return JSONResponse(content=content, status_code=500)
 
+
+@inventory_route.get("/units_of_measurement/", status_code=200)
+async def Get_All_Units_Of_Measurement(jwt_dependency: jwt_dependecy = None):
+    returned = []
+    try:
+        stmt = (
+            select(UOM.c.UomCode, UOM.c.UomName)
+            .filter(UOM.c.IsActive == 1) #activos
+        )
+        Uoms = session.execute(stmt).mappings().all() #obtine en formato diccionario
+        returned = Uoms
+    except Exception as e:
+        print(f"Get_All_Units_Of_Measurement: An error ocurred: {e}")
+    except SQLAlchemyError as e:
+        print("An SqlAlchemmy happened ", e)
+        session.rollback()
+    finally:
+        session.close()
+        return returned
 
 

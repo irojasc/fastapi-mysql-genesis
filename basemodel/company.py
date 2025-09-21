@@ -1,11 +1,9 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
-
 class BankAccount(BaseModel):
     id: Optional[int] = None
     tipo_cuenta: Optional[str] = None
-    tipo_moneda: Optional[str] = None
     banco: Optional[str] = None
     n_cuenta: Optional[str] = None
     n_cci: Optional[str] = None
@@ -36,5 +34,6 @@ class BusinessPartner(BaseModel):
     cuenta_bancaria: Optional[List[BankAccount]] = None
     fecha_creacion: Optional[str] = None
     usuario_creacion: Optional[str] = None
+    moneda: Optional[str] = None
 
 
