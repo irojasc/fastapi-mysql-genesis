@@ -12,7 +12,7 @@ from sqlmodel.ubigeo import Ubigeo
 
 authorization_route = APIRouter(
     prefix = '/authorization',
-    tags=['Module Authorization']
+    tags=['Authorization']
 )
 
 
