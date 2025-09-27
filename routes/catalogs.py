@@ -5,11 +5,27 @@ from sqlmodel.ovtg import OVTG
 from sqlmodel.oafv import OAFV
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session
+from datetime import datetime, timezone
+import pytz
 
 catalog_route = APIRouter(
     prefix = '/catalog',
     tags=['Catalog']
 )
+
+@catalog_route.get("/time")
+async def Get_Time(jwt_dependency: jwt_dependecy = None):
+    # Hora UTC
+    now_utc = datetime.now(timezone.utc)
+
+    # Hora de Lima (UTC-5)
+    lima_tz = pytz.timezone("America/Lima")
+    now_lima = now_utc.astimezone(lima_tz)
+
+    # Retornar como diccionario (JSON)
+    return {
+        "utc": now_utc.isoformat(),
+        "lima": now_lima.isoformat()
 
 
 @catalog_route.get("/tax_types/")
