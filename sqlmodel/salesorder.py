@@ -28,7 +28,7 @@ SalesOrder = Table("SalesOrder", meta,
                 Column("CashBoxTS", String(12), nullable=True),
                 Column("RefDocEntry", Integer, nullable=True),
                 Column("PymntGroup", Enum('CRDN','CRDS','CASH','WPHN','WMCH','TRAN', name="pymnt_group"), nullable=False, default='CASH'),
-                Column("SlpCode", String(15), nullable=False),
+                Column("SlpCode", String(15), nullable=True),
                 Column("CreateDate", DateTime, nullable=True),
                 Column("UpdateDate", DateTime, nullable=True)
                 )
