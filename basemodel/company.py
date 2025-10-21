@@ -32,8 +32,8 @@ class BusinessPartner(BaseModel):
     condicion_pago: Optional[str] = None
     contactos: Optional[List[Contact]] = None
     cuenta_bancaria: Optional[List[BankAccount]] = None
-    fecha_creacion: Optional[str] = None
     usuario_creacion: Optional[str] = None
     moneda: Optional[str] = None
+    # fecha_creacion: Optional[str] = None <--estara controlado por los datos del  backen
 
 

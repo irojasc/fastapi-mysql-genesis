@@ -1,6 +1,6 @@
 import os
 from fastapi.security import OAuth2PasswordBearer
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from typing import Annotated
 from jose import jwt, JWTError
 from config.db import SECRET_KEY
@@ -8,14 +8,34 @@ from config.db import SECRET_KEY
 ALGORITHM = os.getenv("ALGORITHM_KEY", default=None)
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl='Login/token')
 
+# async def get_jwt_validation(token: Annotated[str, Depends(oauth2_bearer)]):
+#     try:
+#         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+#         return True, payload['username']
+#     except JWTError:
+#         return False, None
+
+# # jwt_dependecy = Annotated[bool, Depends(get_jwt_validation)]
+# jwt_dependecy = Annotated[dict, Depends(get_jwt_validation)]
+
 async def get_jwt_validation(token: Annotated[str, Depends(oauth2_bearer)]):
     try:
+        # print(token)
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return True, payload['username']
+        username: str = payload.get("username")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token sin username"
+            )
+        return payload  # devolvemos todo el payload (o solo username si prefieres)
     except JWTError:
-        return False, None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido o expirado"
+        )
 
-jwt_dependecy = Annotated[bool, Depends(get_jwt_validation)]
+jwt_dependecy = Annotated[dict, Depends(get_jwt_validation)]
      
      
      

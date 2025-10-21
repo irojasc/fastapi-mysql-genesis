@@ -12,7 +12,7 @@ from sqlmodel.ubigeo import Ubigeo
 
 authorization_route = APIRouter(
     prefix = '/authorization',
-    tags=['Module Authorization']
+    tags=['Authorization']
 )
 
 
@@ -51,7 +51,7 @@ async def get_data_Auth_UI(jwt_dependency: jwt_dependecy, user:str=None):
         return not_matched_result
 
 @authorization_route.get("/user")
-async def get_user_permissions_by_module(jwt_dependency: jwt_dependecy, user:str=None, module:str=None):
+async def get_user_permissions_by_module(jwt_dependency: jwt_dependecy = None, user:str=None, module:str=None):
     returned_value = []
     try:
         if module is not None:

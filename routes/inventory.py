@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, desc, asc, or_, func, and_, null, literal
 from fastapi.encoders import jsonable_encoder
@@ -16,14 +16,14 @@ from sqlmodel.transfer_product import Transfer_Product
 from sqlmodel.operation_reason import Operation_Reason
 from sqlmodel.uom import UOM
 from sqlmodel.company import Company
-# from functions.product import get_all_publishers
+from functions.catalogs import normalize_last_sync
 from functions.inventory import get_all_inventory_data, get_all_active_transfer
 from sqlalchemy import insert, delete, update
 from basemodel.inventory import InOut_Qty, WareProduct
 from basemodel.product import ware_product_
 from basemodel.ware import ware_edited
-from routes.company import Get_All_Business_Partners_By_Param
-from routes.catalogs import Get_Taxes
+# from routes.company import Get_All_Business_Partners_By_Param
+from routes.catalogs import Get_Taxes, Get_Time
 from decimal import Decimal
 import json
 from datetime import datetime
@@ -41,6 +41,7 @@ inventory_route = APIRouter(
 
 @inventory_route.get("/", status_code=200)
 async def Get_All_Inventory_and_Data_Product(token_key: str = None, idProduct: int = None, jwt_dependency: jwt_dependecy = None):
+    """Cuando va con la clave, retorna todo el stock con last_sync"""
     def convert_decimal(obj):
         if isinstance(obj, Decimal):
             return float(obj)   # 👈 o str(obj) si quieres conservar exactitud
@@ -73,8 +74,14 @@ async def Get_All_Inventory_and_Data_Product(token_key: str = None, idProduct: i
             if token_key == 'CHUSPa@123':
                 result_format = get_statement() #cuando va vacio, trae todos los resultados
 
+                utc_time = await Get_Time()
+                returnedVal = {
+                    "last_sync": utc_time["lima"],
+                    "options":result_format
+                }
+
                 with open("sample.json", "w", encoding='utf8') as outfile:
-                    json.dump(result_format, outfile, ensure_ascii=False, default=convert_decimal, indent=4)
+                    json.dump(returnedVal, outfile, ensure_ascii=False, default=convert_decimal)
                 returned = True
             else:
                 #aqui retorna clave incorrecta, false por ahora
@@ -93,13 +100,22 @@ async def Get_All_Inventory_and_Data_Product(token_key: str = None, idProduct: i
         return returned
 
 @inventory_route.get("/lastchanges", status_code=200)
-async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01', jwt_dependency: jwt_dependecy = None):
+# async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01', jwt_dependency: jwt_dependecy = None):
+async def Get_Last_Inventory_Data_Product_Changes(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), jwt_dependency: jwt_dependecy = None):
     returned = False
     try:
-        # innerDate = datetime.strptime(inputDate, "%Y-%m-%d")
+        #QUITA 10 MINUTOS PARA REALIZAR LA CONSULTA
+        formated_lastsync = normalize_last_sync(last_sync) #resta 5 minutos para traer todos los cambios
 
-        # subquery_ = session.query(Product.c.id).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True).join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True).join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id).filter(or_(Product.c.creationDate >= inputDate, Product.c.editDate >= inputDate, Ware_Product.c.creationDate >= inputDate, Ware_Product.c.editDate >= inputDate)).subquery()
-        subquery_ = select(Product.c.id).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True).join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True).join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id).filter(or_(Product.c.creationDate >= inputDate, Product.c.editDate >= inputDate, Ware_Product.c.creationDate >= inputDate, Ware_Product.c.editDate >= inputDate))
+        subquery_ = select(Product.c.id).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True)\
+            .join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True)\
+            .join(Language, Product.c.idLanguage == Language.c.id, isouter=True)\
+            .join(Item, Product.c.idItem == Item.c.id)\
+            .filter(
+                or_(Product.c.creationDate >= formated_lastsync, 
+                    Product.c.editDate >= formated_lastsync, 
+                    Ware_Product.c.creationDate >= formated_lastsync, 
+                    Ware_Product.c.editDate >= formated_lastsync))
 
         #get select subquery sqlalchemy?
         stmt = (select(Ware.c.code.label("ware_code"), Item.c.code.label("item_code"), Product.c.id.label("id_product"), Product.c.isbn, Product.c.title, Product.c.autor, 
@@ -116,7 +132,11 @@ async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01',
         
         results = session.execute(stmt).mappings().all() #obtine en formato diccionario
         result_format = get_all_inventory_data(results)
-        returned = result_format
+        utc_time = await Get_Time() #consulta hora actual del sistema
+        # print('Consulta ware products: Hora Lima: ', utc_time["lima"])
+        
+        returned = {"last_sync": utc_time["lima"], "options" : result_format}
+        # print(returned)
     except Exception as e:
         print(f"Get_Last_Inventory_Data_Product_Changes/nopair:get:An error ocurred: {e}")
         returned = False
@@ -131,6 +151,7 @@ async def Get_Last_Inventory_Data_Product_Changes(inputDate: str = '2024-01-01',
 
 @inventory_route.get("/warehouse_product", status_code=200)
 async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt_dependecy = None):
+    """Id vacio, trae formato para creacion de articulo"""
     try:
         body = {}
         waredata = {}
@@ -188,15 +209,14 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             #CardCode
             body.update({'CardCode': None })
 
-            #BusinessPartner (opciones para que muestren en el frond)
-            list_ = await Get_All_Business_Partners_By_Param(CardType='S') #obtine proveedores
-            if isinstance(list_, list):
-                list_modified = list(map(lambda x: {"CardCode": x["CardCode"], "CardName": x["CardName"]}, list_))
-                body.update({'BusinessPartners': list_modified})
-            else:
-                body.update({'BusinessPartners': []})
-
-            #
+            # #BusinessPartner (opciones para que muestren en el frond)
+            # list_ = await Get_All_Business_Partners_By_Param(CardType='S') #obtine proveedores
+            # if isinstance(list_, list):
+            #     list_modified = list(map(lambda x: {"CardCode": x["CardCode"], "CardName": x["CardName"]}, list_))
+            #     body.update({'BusinessPartners': list_modified})
+            # else:
+            #     body.update({'BusinessPartners': []})
+            # #
             body.update({'InvntItem': 'N'})
             body.update({'SellItem': 'N'})
             body.update({'BuyItem': 'N'})
@@ -305,13 +325,12 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             body.update({'CardCode': product["CardCode"]}) #proveedor
 
             #BusinessPartner (opciones para que muestren en el frond)
-            list_ = await Get_All_Business_Partners_By_Param(CardType='S') #obtine proveedores
-            if isinstance(list_, list):
-                list_modified = list(map(lambda x: {"CardCode": x["CardCode"], "CardName": x["CardName"]}, list_))
-                body.update({'BusinessPartners': list_modified})
-            else:
-                body.update({'BusinessPartners': []})
-
+            # list_ = await Get_All_Business_Partners_By_Param(CardType='S') #obtine proveedores
+            # if isinstance(list_, list):
+            #     list_modified = list(map(lambda x: {"CardCode": x["CardCode"], "CardName": x["CardName"]}, list_))
+            #     body.update({'BusinessPartners': list_modified})
+            # else:
+            #     body.update({'BusinessPartners': []})
             #
             body.update({'InvntItem': product["InvntItem"]})
             body.update({'SellItem': product["SellItem"]})
@@ -407,6 +426,7 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
 #obtiene las trasferencias entre almacenes y los ingresos como salidas
 @inventory_route.get("/transfer/checkcurrents", status_code=200)
 async def Get_Current_Transfers_By_Ware_And_Date(curIdWare: int = None, curDate: str = None, stateAbove: int = 1, jwt_dependency: jwt_dependecy = None):
+    
     returned = {
         "status": 406,
         "message": "No data available",
@@ -534,11 +554,16 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
     returned = False
     message = 'Ok'
     try:
+        #HORA DE REGISTRO
+        create_date = await Get_Time()
+        #🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨 URGENTE, PRIMERO SE REALIZA EL REGISTRO Y LUEGO DESCUENTA
+
         #state 1, transferencia cerrada
         id_ware = session.query(Ware.c.id).filter(Ware.c.code == invoice.fromWare).first()[0]
         params = list(map(lambda x: {'qtyN': (x.qtyNew if invoice.operacion == 'ingreso' or invoice.operacion == 'inventario' else -abs(x.qtyNew)),
                                         'qtyO': (x.qtyOld if invoice.operacion == 'ingreso' or invoice.operacion == 'inventario' else -abs(x.qtyOld)),
-                                        'editDa': invoice.fromDate,
+                                        # 'editDa': invoice.fromDate,
+                                        'editDa': create_date["lima_bd_format"] or None,
                                         'location': invoice.ubicacion if bool(invoice.ubicacion) else None,
                                         'idPro' : int(x.code.split('_')[1]),
                                         'idWa' : id_ware}, invoice.list_main))
@@ -548,7 +573,8 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
             stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, qtyOld = qtyOld + :qtyO, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
         response_3 = session.execute(stmt, params)
         session.commit()
-        if(response_3.rowcount > 0 and invoice.operacion != 'inventario'):
+
+        if(response_3.rowcount > 0 and invoice.operacion != 'inventario'): #REGISTRA EN LA TABLA TRANSFER
             id_operation_reason = session.query(Operation_Reason.c.idOperReas).filter(Operation_Reason.c.operation == invoice.operacion).filter(Operation_Reason.c.reason == invoice.operacion_motivo).subquery()
             id_fromWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.fromWare).subquery()
             id_toWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.toWare).subquery()
@@ -569,7 +595,7 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
                 )
             response_1 = session.execute(stmt1)
             session.commit()
-            if(response_1.rowcount > 0 and invoice.operacion != 'inventario'):
+            if(response_1.rowcount > 0 and invoice.operacion != 'inventario'): #REGISTRA EN LA TABLA TRANSFER PRODUCTO DETALLE
                 stmt2 = Transfer_Product.insert()
                 products_to_insert = list(map(lambda x: {'idTransfer': invoice.codeTS, 'idProduct': int(x.code.split('_')[1]), 'qtyNew': x.qtyNew, 'qtyOld': x.qtyOld}, invoice.list_main))
                 response_2 = session.execute(stmt2, products_to_insert)
@@ -609,8 +635,15 @@ async def change_product_location(invoice: WareProduct = None, jwt_dependency: j
         "message": ""
     }
     try:
+        #HORA DE REGISTRO
+        create_date = await Get_Time()
+
         idWare = select(Ware.c.id).where(Ware.c.code == invoice.wareCode).limit(1).subquery()
-        session.execute(update(Ware_Product).where(Ware_Product.c.idProduct == invoice.idProduct, Ware_Product.c.idWare == idWare.as_scalar()).values(loc = invoice.loc, editDate = invoice.editDate))
+        session.execute(update(Ware_Product)
+                        .where(Ware_Product.c.idProduct == invoice.idProduct, Ware_Product.c.idWare == idWare.as_scalar())
+                        .values(loc = invoice.loc, editDate = create_date["lima_bd_format"] or None)
+                        # .values(loc = invoice.loc, editDate = invoice.editDate)
+                        )
         session.commit()
         response["state"] = True
         response["message"] = 'Cambios aplicados'
@@ -639,19 +672,31 @@ async def run_inventory_mode(input_param: ware_edited = None, jwt_dependency: jw
         "message": ""
     }
     try:
-        #(1)#primero modificar las cantidades a cero
-        result_1 = session.execute(update(Ware_Product).where((Ware_Product.c.idWare == input_param.wareCode)&\
-                                                            ((Ware_Product.c.qtyNew != 0) | (Ware_Product.c.qtyOld != 0))).values(qtyNew = 0, qtyOld = 0))
+        result_1 = session.execute(update(Ware_Product)
+                                   .where(and_(Ware_Product.c.idWare == input_param.wareCode,
+                                               or_(Ware_Product.c.qtyNew != 0,
+                                                   Ware_Product.c.qtyOld != 0)
+                                                   )
+                                   )
+                                   .values(qtyNew=0, qtyOld=0)
+                                    )   
         session.commit()
         if(result_1.rowcount >= 0):
             #(2)#luego actualiza la fecha de inventario
             # 2025-04-13
-            result_2 = session.execute(update(Ware).where(and_(Ware.c.id == input_param.wareCode,
-                                                               or_(Ware.c.inv_date != input_param.editDate,
-                                                                   Ware.c.inv_date == None))).\
-                                     values(inv_date = input_param.editDate))
-            result_3 = session.execute(update(Ware).where((Ware.c.id == input_param.wareCode) & (Ware.c.inv_clean == 1)).\
-                                     values(inv_clean = b'\x00'))
+            result_2 = session.execute(update(Ware)
+                                        .where(and_(Ware.c.id == input_param.wareCode,
+                                                   or_(Ware.c.inv_date != input_param.editDate,
+                                                       Ware.c.inv_date == None)))
+                                        .values(inv_date = input_param.editDate)
+                                        )
+            # result_3 = session.execute(update(Ware).where((Ware.c.id == input_param.wareCode) & (Ware.c.inv_clean == 1)).\
+            #                          values(inv_clean = b'\x00'))
+            
+            result_3 = session.execute(update(Ware)
+                                       .where(and_(Ware.c.id == input_param.wareCode, Ware.c.inv_clean == 1))
+                                       .values(inv_clean = b'\x00')
+                                     )
             session.commit()
             if(result_2.rowcount >= 0 and result_3.rowcount >= 0):
                 response["state"] = True
@@ -680,6 +725,9 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
         "message": ""
     }
     try:
+        #HORA DE REGISTRO
+        create_date = await Get_Time()
+
         #si no es final state
         if(not(invoice.isFinalState)):
             #solamente baja en uno el state
@@ -707,7 +755,8 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
             params = list(map(lambda x: {
                 'qtyN': x[1],
                 'qtyO': x[2],
-                'editDa': invoice.toDate,
+                # 'editDa': invoice.toDate,
+                'editDa': create_date["lima_bd_format"] or None,
                 'idPro' : int(x[0]),
                 'idWa' : id_toWare}, items_quantity))
             
@@ -766,6 +815,8 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         ware_not_enabled = list(map(lambda dato: dato.wareCode, filter(lambda data: not(data.active),product_.waredata)))
         ware_not_enabled = obtener_posiciones(exits_ware_codes, ware_not_enabled) if bool(len(ware_not_enabled)) else () #devuelve una tuple de idWares que no estan habilitados
 
+        #FALTA 🚨🚨🚨🚨 FALTA QUE NO DESABILITE CON PRODUCTOS EN TRANSITO NI GIRADOS EN DOCUMENTOS
+
         if bool(len(ware_not_enabled)):
             
             #obtiene stock de ware not enabled
@@ -785,6 +836,9 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
 
             # trae stock positivo para wareCodes con enable false
 
+            #HORA DE ACTUALIZACION
+            create_date = await Get_Time()
+
 
             stmt = update(Product).where(Product.c.id == product_.id).values(
                 idItem= scalarIdItem,
@@ -800,7 +854,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                 cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
                 width=product_.width,
                 height=product_.height,
-                editDate=datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
+                editDate=create_date["lima_bd_format"] or None,
                 large=product_.large,
                 wholesale=b'\x01' if bool(product_.wholesale) else None,
                 antique=b'\x01' if bool(product_.antique) else None,
@@ -823,10 +877,6 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             
             dict_exits_ware_code_not_none = {k: v for k, v in dict_exits_ware_codes.items() if v is not None}
 
-            # print('A',ware_not_enabled)
-            # print('B',dict_exits_ware_codes)
-            # print('C',dict_exits_ware_code_not_none)
-
             for dato in product_.waredata: #solo los wares que existen
                 if(dato.wareCode in dict_exits_ware_code_not_none.keys()): #si esta dentro de la lista, es por que existe
                     stmt = update(Ware_Product).where(and_(Ware_Product.c.idWare == dict_exits_ware_code_not_none[dato.wareCode],
@@ -838,7 +888,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                         qtyMinimun = dato.stockMin or 0,
                         qtyMaximum = dato.stockMax or 0,
                         isEnabled = b'\x01' if bool(dato.active) else b'\x00',
-                        editDate = datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None
+                        editDate = create_date["lima_bd_format"] or None
                     )
                     # Ejecutar la instrucción de actualización
                     result = session.execute(stmt)
@@ -856,8 +906,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                         'dsct': dato.dsct or 0.0, 
                         'qtyMinimun': dato.stockMin or 0,
                         'isEnabled': b'\x01' if bool(dato.active) else b'\x00',
-                        'editDate': datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
-                        'creationDate': datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
+                        'creationDate': create_date["lima_bd_format"] or None,
                         'qtyMaximum': dato.stockMax or 0,
                     })
                     result = session.execute(stmt)
@@ -913,7 +962,6 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         return None  # Si no encuentra la clave, devuelve None
     
     try:
-        # print(product_.waredata)
         # trae idIitem apartir de itemCode
         scalarIdItem = session.query(Item.c.id).filter(Item.c.code == product_.idItem).scalar()
 
@@ -923,6 +971,9 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         # obtener la lista de wares
         wares = session.query(Ware.c.code, Ware.c.id).all()
         #[('STC', 1), ('SNTG', 2), ('ALYZ', 3), ('WEB', 4), ('FRA', 5)]
+
+        #HORA DE REGISTRO
+        create_date = await Get_Time()
         
         stmt = insert(Product).values(
             id=product_.id,
@@ -939,7 +990,7 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
             width=product_.width,
             height=product_.height,
-            editDate=datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
+            creationDate=create_date["lima_bd_format"] or None,
             large=product_.large,
             wholesale=b'\x01' if bool(product_.wholesale) else None,
             antique=b'\x01' if bool(product_.antique) else None,
@@ -969,8 +1020,7 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                     'dsct': dato.dsct or 0.0, 
                     'qtyMinimun': dato.stockMin or 0,
                     'isEnabled': b'\x01' if bool(dato.active) else b'\x00',
-                    'editDate': datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
-                    'creationDate': datetime.strptime(product_.editDate, '%Y-%m-%d').date() if product_.editDate is not None else None,
+                    'creationDate': create_date["lima_bd_format"] or None,
                     'qtyMaximum': dato.stockMax or 0,
                 })
                 result = session.execute(stmt)

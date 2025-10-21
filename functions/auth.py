@@ -30,8 +30,22 @@ def authenticate_user(username: str, password:str):
         session.close()
         return Response
     
-def create_access_token(user_id: int, username: str, hours):
+def create_access_token(user_id: int, username: str, hours: int, minutes: int):
     encode = {'id': user_id, 'username': username}
-    expires = datetime.utcnow() + timedelta(hours=int(hours))
+    # expires = datetime.utcnow() + timedelta(minutes=int(minutes))
+    expires = datetime.utcnow() + timedelta(hours=hours)
     encode.update({'exp': expires})
     return jwt.encode(encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# Ejemplo chat gpt
+# def create_access_token(user_id: int, username: str, hours: int = 0, minutes: int = 30):
+#     encode = {
+#         "id": user_id,
+#         "username": username
+#     }
+#     expires = datetime.utcnow() + timedelta(hours=hours, minutes=minutes)
+#     encode.update({"exp": expires})
+#     return jwt.encode(encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# token = create_access_token(1, "ivan", hours=1, minutes=30)
+# print(token)

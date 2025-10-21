@@ -1,5 +1,5 @@
 from sqlalchemy import Table, Column, text
-from sqlalchemy.sql.sqltypes import Integer, String, Date, _Binary, DECIMAL
+from sqlalchemy.sql.sqltypes import Integer, String, Date, _Binary, DECIMAL, DateTime
 from config.db import meta, engine
 
 Product = Table("product", meta, 
@@ -17,8 +17,8 @@ Product = Table("product", meta,
                 Column("cover", _Binary, default=None),
                 Column("width", Integer, default=None),
                 Column("height", Integer, default=None),
-                Column("creationDate", Date, nullable=False),
-                Column("editDate", Date, nullable=False),
+                Column("creationDate", DateTime, nullable=True),
+                Column("editDate", DateTime, nullable=True),
                 Column("large", Integer, default=None),
                 Column("wholesale", _Binary, default=None),
                 Column("antique", _Binary, default=None),

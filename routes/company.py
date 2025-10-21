@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 # from sqlalchemy import select, insert, delete, asc, func
-from sqlalchemy import select, asc, func, insert, and_
+from sqlalchemy import select, asc, func, insert, and_, or_
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session
 from sqlmodel.company import Company
@@ -13,7 +13,11 @@ from sqlmodel.companyaccounts import CompanyAccounts
 from basemodel.company import BusinessPartner
 from sqlmodel.ubigeo import Ubigeo
 from functions.company import get_all_companies, get_ubigeos_format
+from functions.catalogs import normalize_last_sync
 from service.company import get_partner_by_ruc_dni # consume servicio de reniec o sunat
+from routes.catalogs import Get_Time
+from datetime import datetime
+import json
 
 company_route = APIRouter(
     prefix = '/company',
@@ -86,6 +90,8 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
     returnedValue = {"body": {}, "message": "Socio creado!!"}
     status_code = 201
     try:
+        #HORA DE REGISTRO
+        create_date = await Get_Time()
 
         #OBTIENE EL IDUBIGEO
         ubigeo = session.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
@@ -105,7 +111,7 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                 idUbigeo= ubigeo.idUbigeo if ubigeo is not None else None,
                 type= BusinessPartner.tipo_socio or None,
                 LicTradNum= BusinessPartner.numero_documento or None,
-                creationDate= BusinessPartner.fecha_creacion or None,
+                creationDate= create_date["lima_bd_format"] or None,
                 DocType= BusinessPartner.tipo_documento or None,
                 CardStatus= BusinessPartner.estado or None,
                 CardCond= BusinessPartner.condicion or None,
@@ -131,6 +137,7 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                                 Phone=contact.telefono,
                                 Email=contact.correo,
                                 DefaultContact=int(contact.default),
+                                creationDate=create_date["lima_bd_format"] or None,
                         )
                     )
                     res_contact = session.execute(stmt1)
@@ -175,8 +182,6 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
             status_code=422,
             returnedValue.update({"message": "Error al registrar socio"})
 
-        
- 
     except Exception as e:
         session.rollback()
         print(f"An error ocurred: {e}")
@@ -188,7 +193,6 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
             status_code= status_code[0] if isinstance(status_code, tuple) else status_code,
             content=returnedValue
         )
-
 
 @company_route.get("/ubigeos/", status_code=200)
 async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None, jwt_dependency: jwt_dependecy = None):
@@ -271,6 +275,7 @@ async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
 
 @company_route.get("/get_all_business_partners", status_code=200)
 async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=None, jwt_dependency: jwt_dependecy = None):
+    """🚨Consulta sin parametros(todos los partners con 1 contacto) genera file .json en servidor backend"""
     #ACEPTARA PARAMETROS, C Y S: DONDE C es customer y S es Supplier
     returned = []
     try:
@@ -297,6 +302,13 @@ async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=Non
                 )
                 results = session.execute(stmt).mappings().all() #obtine en formato diccionario
                 returned = list(map(get_all_companies,results))
+                utc_time = await Get_Time()
+                returned = {"last_sync": utc_time["lima"], "partners" : returned}
+
+                #EXPORTA EN JSON
+                with open("partners.json", "w", encoding='utf8') as outfile:
+                    json.dump(returned, outfile, ensure_ascii=False, indent=4)
+
         else:
             stmt = (
                 select(Company, CompanyContacts.c.Name.label("contact_name"), CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name)
@@ -313,6 +325,38 @@ async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=Non
         session.rollback()
         print(f"An error ocurred: {e}")
         returned = []
+    finally:
+        session.close()
+        return returned
+    
+@company_route.get("/lastchanges", status_code=200)
+async def Get_Last_Company(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), jwt_dependency: jwt_dependecy = None):
+    try:
+        #convertir el last_sync
+        formated_lastsync = normalize_last_sync(last_sync) #resta 5 minutos para traer todos los cambios
+        stmt = (
+            select(Company, CompanyContacts.c.Name.label("contact_name"), CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name)
+            .join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True)
+            .join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True)
+            .filter(or_(Company.c.creationDate >= formated_lastsync, 
+                        Company.c.updateDate >= formated_lastsync,
+                        CompanyContacts.c.creationDate >= formated_lastsync,
+                        CompanyContacts.c.updateDate >= formated_lastsync
+                        ))
+            .order_by(asc(Company.c.docName))
+        )
+
+        results = session.execute(stmt).mappings().all() #obtine en formato diccionario
+        returned = list(map(get_all_companies,results))
+        utc_time = await Get_Time() #consulta hora actual del sistema
+        # print('Consulta proveedores: Hora Lima: ', utc_time["lima"])
+        returned = {"last_sync": utc_time["lima"], "partners" : returned}
+
+    except Exception as e:
+        print("rollback")
+        session.rollback()
+        print(f"An error ocurred: {e}")
+        returned = {}
     finally:
         session.close()
         return returned

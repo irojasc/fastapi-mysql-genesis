@@ -1,5 +1,5 @@
 from sqlalchemy import Table, Column
-from sqlalchemy.sql.sqltypes import  String, Integer
+from sqlalchemy.sql.sqltypes import  String, Integer, DateTime
 from config.db import meta, engine
 
 CompanyContacts = Table("CompanyContacts", meta, 
@@ -8,6 +8,8 @@ CompanyContacts = Table("CompanyContacts", meta,
                     Column("Name", String(100), nullable=False),
                     Column("Phone", String(30), nullable=True),
                     Column("Email", String(100), nullable=True),
-                    Column("DefaultContact", Integer, nullable=True, default=0)
+                    Column("DefaultContact", Integer, nullable=True, default=0),
+                    Column("updateDate", DateTime, nullable=True),
+                    Column("creationDate", DateTime, nullable=True)
                 )
 meta.create_all(bind=engine)

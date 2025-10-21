@@ -43,8 +43,8 @@ class ware_product_(BaseModel):
     cover: Optional[bool] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    creationDate: str = None
-    editDate: str
+    creationDate: Optional[str] = None
+    editDate: Optional[str] = None
     large: Optional[int] = None
     wholesale: Optional[bool] = None
     antique: Optional[bool] = None
