@@ -33,7 +33,7 @@ def authenticate_user(username: str, password:str):
 def create_access_token(user_id: int, username: str, hours: int, minutes: int):
     encode = {'id': user_id, 'username': username}
     # expires = datetime.utcnow() + timedelta(minutes=int(minutes))
-    expires = datetime.utcnow() + timedelta(hours=hours)
+    expires = datetime.utcnow() + timedelta(hours=int(hours))
     encode.update({'exp': expires})
     return jwt.encode(encode, SECRET_KEY, algorithm=ALGORITHM)
 
