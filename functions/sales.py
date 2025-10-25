@@ -483,20 +483,23 @@ def generar_ticket_close(nombre_archivo, items, do_c):
 
         # === Pie de página (resumen a la derecha) ===
         resumen_data = [
-            ["Caja:", f"S/ {do_c['caja']}"],
-            ["Efec. Teorico:", f"S/ {do_c['cash_teory']}"],
-            ["Efec. Diferencia:", f"S/ {do_c['diff']}"],
-            ["Efec. Total:", f"S/ {do_c['total']}"],
+            ["Caja apertura:", f"S/ {do_c['caja']}"],
+            ["◆ Efectivo ventas:", f"S/ {do_c['cash_teory']}"],
+            ["Efectivo diferencia:", f"S/ {do_c['diff']}"],
+            ["Efectivo total:", f"S/ {do_c['total']}"],
+            ["◆ POS(Maquina) ventas:", f"S/ {do_c['card_total_plus_wallet_machine']}"],
+            ["◆ Yape/Plin(A celular) ventas:", f"S/ {do_c['wallet_no_machine_total']}"],
         ]
 
         resumen_table = Table(resumen_data, colWidths=[width * 0.75, width * 0.25])
         resumen_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('FONT', (0, 0), (-1, 2), 'HeiseiMin-W3', 9),
-            ('FONT', (-1, -1), (-1, -1), 'HeiseiMin-W3', 10),
+            ('FONT', (0, 0), (-1, -1), 'HeiseiMin-W3', 9),
+            ('FONT', (0, 3), (-1, 3), 'HeiseiMin-W3', 10),
             ('TOPPADDING', (0, 0), (-1, -1), 1),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ('LINEABOVE', (0, 4), (-1, 4), 0.5, colors.black),
         ]))
 
         elements.append(resumen_table)
@@ -539,11 +542,11 @@ def generar_ticket_close(nombre_archivo, items, do_c):
         buffer.seek(0)
 
         # 5️⃣ Obtener el contenido binario
-        pdf_bytes = buffer.getvalue()
+        # pdf_bytes = buffer.getvalue()
 
-        # 6️⃣ Guardar también en disco
-        with open(nombre_archivo, "wb") as f:
-            f.write(pdf_bytes)
+        # # 6️⃣ Guardar también en disco
+        # with open(nombre_archivo, "wb") as f:
+        #     f.write(pdf_bytes)
 
         # Convertir PDF a base64 (para enviarlo en JSON)
         pdf_base64 = base64.b64encode(buffer.read()).decode("utf-8")

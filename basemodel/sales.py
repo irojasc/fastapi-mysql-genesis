@@ -97,6 +97,8 @@ class Body_Ticket_Close(BaseModel):
     cash_teory : Optional[str] = "0.00" #formato 2025-10-07
     diff : Optional[str] = "0.00" #pontificia universidad catolica del peru
     total : Optional[str] = "0.00" #205689741258
+    card_total_walletmch: Optional[str] = "0.00",
+    wallet_total_phone: Optional[str] = "0.00",
     date : Optional[str] = "" 
     vendedor : Optional[str] = ""
     items: List[Item_Ticket_Close] = []

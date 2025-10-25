@@ -411,11 +411,22 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
 
                 ##################### GRABA CIERRE DE CAJA
                 ##################### INICIA GENERACIONDE TICKET PDF
+                                #    CashRegister.c.CashOpen + CashRegister.c.CashSystem + CashRegister.c.CashDiff
+                                #    CashRegister.c.CardTotal + CashRegister.c.WalletTotalM
 
                 stmt = (select(CashRegister.c.CashOpen.label("caja"),
                                CashRegister.c.CashSystem.label("cash_teory"),
                                CashRegister.c.CashDiff.label("diff"),
-                               (CashRegister.c.CashOpen + CashRegister.c.CashSystem + CashRegister.c.CashDiff).label("total"),
+                               (
+                                   func.coalesce(CashRegister.c.CashOpen, 0)
+                                    + func.coalesce(CashRegister.c.CashSystem, 0)
+                                    + func.coalesce(CashRegister.c.CashDiff, 0)
+                                ).label("total"),
+                               (
+                                   func.coalesce(CashRegister.c.CardTotal, 0)
+                                    + func.coalesce(CashRegister.c.WalletTotalM, 0)
+                                ).label("card_total_walletmch"),
+                                func.coalesce(CashRegister.c.WalletTotalC, 0).label("wallet_total_phone"),
                                CashRegister.c.CloseDate.label("date"),
                                CashRegister.c.User.label("vendedor")
                                )
@@ -432,6 +443,8 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                             "cash_teory": "0.00" if idx["cash_teory"] is None else idx["cash_teory"].to_eng_string(),
                             "diff": "0.00" if idx["diff"] is None else idx["diff"].to_eng_string(),
                             "total": "0.00" if idx["total"] is None else idx["total"].to_eng_string(),
+                            "card_total_walletmch": "0.00" if idx["card_total_walletmch"] is None else idx["card_total_walletmch"].to_eng_string(),
+                            "wallet_total_phone": "0.00" if idx["wallet_total_phone"] is None else idx["wallet_total_phone"].to_eng_string(),
                             "date": "no-date" if idx["date"] is None else idx["date"].strftime("%d/%m/%Y"),
                             "vendedor": "no-vendedor" if idx["vendedor"] is None else idx["vendedor"]
                             } 
@@ -850,6 +863,8 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
             "cash_teory": body.cash_teory,
             "diff": body.diff,
             "total": body.total,
+            "card_total_plus_wallet_machine": body.card_total_walletmch,
+            "wallet_no_machine_total": body.wallet_total_phone,
             "date": body.date,
             "vendedor": body.vendedor
         }
