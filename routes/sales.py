@@ -187,9 +187,81 @@ async def Get_Cash_Register_By_Param(cash_register_body: cash_register = Depends
     finally:
         session.close()
         return returned_value
+    
 
-@sales_route.get("/get_detail_sale_order/", status_code=200)
-async def Get_Detail_Sale_Order(cash_register_body: cash_register = Depends(), payload: jwt_dependecy = None):
+@sales_route.get("/get_sale_order_detail/", status_code=200)
+async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=None):
+    returnedVal = {
+                    "message": "Something wrong happen",
+                    "status": False, 
+                    "data": []
+                   }
+    try:
+        if DocEntry is not None:
+
+            stmt = (
+                select(SalesOrder.c.DocNum.label("doc_num"), 
+                        SalesOrder.c.DocDate.label("doc_date"), 
+                        Company.c.docName.label("card_name"), 
+                        Company.c.LicTradNum.label("card_num"), 
+                        SalesOrder.c.SubTotal.label("sub_total"),
+                        SalesOrder.c.DiscSum.label("dscto_total"),
+                        SalesOrder.c.VatSum.label("tax_total"),
+                        SalesOrder.c.DocTotal.label("total"),
+                        PymntGroup.c.PymntGroupName.label("pay_method"),
+                        Product.c.id.label("Id"),
+                        Product.c.title.label("dscp"),
+                        Product.c.isbn.label("cod"),
+                        SalesOrderDetail.c.Quantity.label("qty"),
+                        SalesOrderDetail.c.UnitPrice.label("pvp"),
+                        SalesOrderDetail.c.DiscSum.label("dsct"),
+                        SalesOrderDetail.c.Total.label("total_linea"))
+                .join(SalesOrderDetail, SalesOrder.c.DocEntry == SalesOrderDetail.c.DocEntry)
+                .join(Company, SalesOrder.c.CardCode == Company.c.cardCode)
+                .join(Product, SalesOrderDetail.c.idProduct == Product.c.id)
+                .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
+                .order_by(asc(SalesOrderDetail.c.LineNum))
+                .filter(SalesOrder.c.DocEntry == DocEntry)
+            )
+
+            result = session.execute(stmt).mappings().all()
+
+            if isinstance(result, list) and len(result) > 0:
+                body=build_body_ticket(result)
+
+                doc = {
+                    "doc_num": body.doc_num,
+                    "doc_date": body.doc_date,
+                    "card_name": body.card_name,
+                    "card_num": body.card_num,
+                    "sub_total": body.sub_total,
+                    "dscto_total": body.dscto_total,
+                    "tax_total": body.tax_total,
+                    "total": body.total,
+                    "pay_method": body.pay_method,
+                    "doc_time": body.doc_time,
+                    "items": [{"id": idx.id, "dscp": idx.dscp, "cod": idx.cod , "qty": idx.qty, "pvp": idx.pvp, "dsct": idx.dsct,"total_linea": idx.total_linea} 
+                            for idx in body.items]
+                }
+
+                returnedVal.update({"message": "ok", "status": True, "data": doc})
+
+            else:
+                returnedVal.update({"message": "Something wrong happen", "status": False, "data": []})
+
+        else:
+            returnedVal.update({"message": "Debe ingresar un DocEntry Valido", "status": False, "data": []})
+        
+        
+        return returnedVal
+        
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        returnedVal.update({"message": f"An error occurred: {e}", "status": False})
+        return returnedVal
+
+@sales_route.get("/get_all_sales_order_of_cashregister/", status_code=200)
+async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register = Depends(), payload: jwt_dependecy = None):
     returned_value = []
     try:
         if cash_register_body.CodeTS is not None:
@@ -435,8 +507,8 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
 
                 response = session.execute(stmt).mappings().all()
             
-                # results = await Get_Detail_Sale_Order(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
-                items = await Get_Detail_Sale_Order(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
+                # results = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
+                items = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
                 header = [
                             {
                             "caja": idx["caja"].to_eng_string(),
@@ -727,17 +799,6 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy):
                 "message": response["message"]
             }
      
-            # respuesta = {
-            #     "status" : False,
-            #     "data": {},
-            #     "message": "error al generar ticket",
-            #     "file": None
-            # }
-
-            # print(response)
-            
-            # print(respuesta)
-
             if response["status_code"] == 201:
                 stmt = (
                             select(SalesOrder.c.DocNum.label("doc_num"), 
@@ -828,8 +889,6 @@ async def Crear_Ticket_PDF(body:Body_Ticket, payload: jwt_dependecy):
         }
 
         items = [{"dscp": idx.dscp, "cod": idx.cod , "qty": idx.qty, "pvp": idx.pvp, "dsct": idx.dsct,"total_linea": idx.total_linea} for idx in body.items]
-
-
 
         status, message, file = generar_ticket(
                         nombre_archivo="ticket_venta.pdf",

@@ -583,6 +583,7 @@ def build_body_ticket(data: list[dict]) -> Body_Ticket:
         total=to_str_decimal(first.get("total", Decimal("0.00"))),
         items=[
             Item_Ticket(
+                id=str(item.get("Id", "0")),
                 dscp=str(item.get("dscp", "")),
                 cod=str(item.get("cod", "")) if item.get("cod") else "",
                 qty=str(item.get("qty", "0")),

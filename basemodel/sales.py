@@ -63,6 +63,7 @@ class sales_order(BaseModel):
 
 
 class Item_Ticket(BaseModel):
+    id: Optional[str] = "0"
     dscp: Optional[str] = "" #agua cielo 1L
     cod: Optional[str] = "" #123654
     qty: Optional[str] = "0" # 1
