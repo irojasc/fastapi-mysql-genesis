@@ -558,23 +558,29 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
         create_date = await Get_Time()
         #🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨 URGENTE, PRIMERO SE REALIZA EL REGISTRO Y LUEGO DESCUENTA
 
-        #state 1, transferencia cerrada
-        id_ware = session.query(Ware.c.id).filter(Ware.c.code == invoice.fromWare).first()[0]
-        params = list(map(lambda x: {'qtyN': (x.qtyNew if invoice.operacion == 'ingreso' or invoice.operacion == 'inventario' else -abs(x.qtyNew)),
-                                        'qtyO': (x.qtyOld if invoice.operacion == 'ingreso' or invoice.operacion == 'inventario' else -abs(x.qtyOld)),
-                                        # 'editDa': invoice.fromDate,
-                                        'editDa': create_date["lima_bd_format"] or None,
-                                        'location': invoice.ubicacion if bool(invoice.ubicacion) else None,
-                                        'idPro' : int(x.code.split('_')[1]),
-                                        'idWa' : id_ware}, invoice.list_main))
-        if bool(invoice.ubicacion):
-            stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, qtyOld = qtyOld + :qtyO, editDate = :editDa, loc = :location where idProduct = :idPro and idWare = :idWa")
-        else:
-            stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, qtyOld = qtyOld + :qtyO, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
-        response_3 = session.execute(stmt, params)
-        session.commit()
+        def UpdateQtyWareProduct(objInvoic_e = None):
+            #state 1, transferencia cerrada [WARE_PRODUCT]
+            id_ware = session.query(Ware.c.id).filter(Ware.c.code == objInvoic_e.fromWare).first()[0]
+            params = list(map(lambda x: {'qtyN': (x.qtyNew if objInvoic_e.operacion == 'ingreso' or objInvoic_e.operacion == 'inventario' else -abs(x.qtyNew)),
+                                            'qtyO': (x.qtyOld if objInvoic_e.operacion == 'ingreso' or objInvoic_e.operacion == 'inventario' else -abs(x.qtyOld)),
+                                            # 'editDa': objInvoic_e.fromDate,
+                                            'editDa': create_date["lima_bd_format"] or None,
+                                            'location': objInvoic_e.ubicacion if bool(objInvoic_e.ubicacion) else None,
+                                            'idPro' : int(x.code.split('_')[1]),
+                                            'idWa' : id_ware}, objInvoic_e.list_main))
+            if bool(objInvoic_e.ubicacion):
+                stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, qtyOld = qtyOld + :qtyO, editDate = :editDa, loc = :location where idProduct = :idPro and idWare = :idWa")
+            else:
+                stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, qtyOld = qtyOld + :qtyO, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
+            response_3 = session.execute(stmt, params)
+            session.commit()
 
-        if(response_3.rowcount > 0 and invoice.operacion != 'inventario'): #REGISTRA EN LA TABLA TRANSFER
+            return response_3.rowcount > 0
+
+
+        # if(response_3.rowcount > 0 and invoice.operacion != 'inventario'): #REGISTRA EN LA TABLA TRANSFER
+        if(invoice.operacion != 'inventario'): #REGISTRA EN LA TABLA TRANSFER
+
             id_operation_reason = session.query(Operation_Reason.c.idOperReas).filter(Operation_Reason.c.operation == invoice.operacion).filter(Operation_Reason.c.reason == invoice.operacion_motivo).subquery()
             id_fromWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.fromWare).subquery()
             id_toWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.toWare).subquery()
@@ -585,8 +591,8 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
                     fromWareId= id_fromWare.as_scalar(),
                     toWareId= id_toWare.as_scalar(),
                     fromUser=invoice.curUser,
-                    fromDate= invoice.fromDate,
-                    toDate= invoice.toDate,
+                    fromDate= create_date["lima_transfer_format"],
+                    toDate= None if invoice.toDate is None else create_date["lima_transfer_format"] if invoice.fromDate == invoice.toDate else invoice.toDate,
                     state= invoice.state,
                     note= invoice.comentario,
                     cardCode= invoice.socio_docNum,
@@ -595,19 +601,24 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
                 )
             response_1 = session.execute(stmt1)
             session.commit()
+
             if(response_1.rowcount > 0 and invoice.operacion != 'inventario'): #REGISTRA EN LA TABLA TRANSFER PRODUCTO DETALLE
                 stmt2 = Transfer_Product.insert()
                 products_to_insert = list(map(lambda x: {'idTransfer': invoice.codeTS, 'idProduct': int(x.code.split('_')[1]), 'qtyNew': x.qtyNew, 'qtyOld': x.qtyOld}, invoice.list_main))
                 response_2 = session.execute(stmt2, products_to_insert)
                 session.commit()
                 if(response_2.rowcount > 0):
-                    returned = True
+                    #AQUI RECIEN DESCUENTA EN LA TABLA WARE_PRODUCT
+                    returned = UpdateQtyWareProduct(objInvoic_e = invoice)
             else:
                 returned = False
-        elif(invoice.operacion == 'inventario'):
-            returned = True
+
+        elif(invoice.operacion == 'inventario'): #(PARA MODO INVENTARIO)
+            returned = UpdateQtyWareProduct(objInvoic_e = invoice)
+
         else:
             returned = False
+
     except Exception as e:
         print(f"Update_Inventory_Quantities/nopair:patch:An error ocurred: {e}")
         session.close()
@@ -744,7 +755,7 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
             session.execute(update(Transfer).
                             where(Transfer.c.codeTS == invoice.codeTS).
                             values(state = Transfer.c.state - 1,
-                                   toDate= invoice.toDate))
+                                    toDate= create_date["lima_transfer_format"]))
             session.commit()
             #actualiza las cantidades en ware_product
             items_quantity = session.query(Transfer_Product.c.idProduct, Transfer_Product.c.qtyNew, Transfer_Product.c.qtyOld). \

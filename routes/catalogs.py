@@ -41,7 +41,8 @@ async def Get_Time(jwt_dependency: jwt_dependecy = None):
     return {
         "utc": now_utc.isoformat(),
         "lima": now_lima.isoformat(),
-        "lima_bd_format": now_lima.strftime("%Y-%m-%d %H:%M:%S")
+        "lima_bd_format": now_lima.strftime("%Y-%m-%d %H:%M:%S"),
+        "lima_transfer_format": now_lima.strftime("%Y-%m-%d")
     }
 
 @catalog_route.get("/tax_types/")
