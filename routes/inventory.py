@@ -556,7 +556,6 @@ async def Update_Inventory_Quantities(invoice: InOut_Qty, jwt_dependency: jwt_de
     try:
         #HORA DE REGISTRO
         create_date = await Get_Time()
-        #🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨 URGENTE, PRIMERO SE REALIZA EL REGISTRO Y LUEGO DESCUENTA
 
         def UpdateQtyWareProduct(objInvoic_e = None):
             #state 1, transferencia cerrada [WARE_PRODUCT]
@@ -733,7 +732,8 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
     response = {
         "state": False,
         "result": [],
-        "message": ""
+        "message": "",
+        "toDate": None
     }
     try:
         #HORA DE REGISTRO
@@ -751,11 +751,12 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
             response["message"] = f'Se actualizo Transfer con codigo {invoice.codeTS}'
             response["result"] = False
         else:
+            toDat_e = create_date["lima_transfer_format"]
             #baja en uno el state y actuliza las cantidades en ware_product
             session.execute(update(Transfer).
                             where(Transfer.c.codeTS == invoice.codeTS).
                             values(state = Transfer.c.state - 1,
-                                    toDate= create_date["lima_transfer_format"]))
+                                    toDate= toDat_e))
             session.commit()
             #actualiza las cantidades en ware_product
             items_quantity = session.query(Transfer_Product.c.idProduct, Transfer_Product.c.qtyNew, Transfer_Product.c.qtyOld). \
@@ -767,7 +768,7 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
                 'qtyN': x[1],
                 'qtyO': x[2],
                 # 'editDa': invoice.toDate,
-                'editDa': create_date["lima_bd_format"] or None,
+                'editDa': toDat_e or None,
                 'idPro' : int(x[0]),
                 'idWa' : id_toWare}, items_quantity))
             
@@ -778,6 +779,8 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
                 response["state"] = True
                 response["message"] = f'Se agregaron items con codigo {invoice.codeTS}'
                 response["result"] = True
+                partes = toDat_e.split("-") # <- split para cambiar el orden de la fecha
+                response["toDate"] = partes[2] + '-' + partes[1] + '-' + partes[0] #<- fecha requerida para frond
 
     except Exception as e:
         response["state"] = False

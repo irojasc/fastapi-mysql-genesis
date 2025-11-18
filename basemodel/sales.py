@@ -20,6 +20,9 @@ class cash_register(BaseModel):
     CashDiff: Optional[str] = "0.00"
     Obs: Optional[str] = None
     UpdateDate: Optional[datetime] = None
+    code2count: Optional[str] = None
+    total2count: Optional[int] = None
+
 
 
 class item(BaseModel):
@@ -103,3 +106,5 @@ class Body_Ticket_Close(BaseModel):
     date : Optional[str] = "" 
     vendedor : Optional[str] = ""
     items: List[Item_Ticket_Close] = []
+    item2Sold: Optional[int] = 0
+    item2Total: Optional[int] = 0

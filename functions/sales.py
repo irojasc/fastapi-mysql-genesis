@@ -506,6 +506,11 @@ def generar_ticket_close(nombre_archivo, items, do_c):
      
 
         # Crear el contenido de la fila
+        texto_fila_items2count = [
+            f"""Estampilla: Ini. ({do_c["item2Total"]}) - Vent. ({do_c["item2Sold"]}) = Fin ({do_c["item2Total"] - do_c["item2Sold"]})""", #hardcodeado
+            "",
+        ]
+
         texto_fila_pago = [
             f"Fecha Caja: ",
             f"{do_c['date']}",
@@ -517,7 +522,9 @@ def generar_ticket_close(nombre_archivo, items, do_c):
             f"{do_c['vendedor']}",
         ]
 
-        tabla_doc_pago = Table([texto_fila_pago,
+        tabla_doc_pago = Table([
+                                texto_fila_items2count,
+                                texto_fila_pago,
                                 texto_fila_cajero
                                 ], colWidths=[19*mm, 51*mm])
         
@@ -541,10 +548,10 @@ def generar_ticket_close(nombre_archivo, items, do_c):
         # Ir al inicio del buffer
         buffer.seek(0)
 
-        # 5️⃣ Obtener el contenido binario
+        # # 5️⃣ Obtener el contenido binario
         # pdf_bytes = buffer.getvalue()
 
-        # # 6️⃣ Guardar también en disco
+        # # # 6️⃣ Guardar también en disco
         # with open(nombre_archivo, "wb") as f:
         #     f.write(pdf_bytes)
 

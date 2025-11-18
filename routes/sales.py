@@ -33,6 +33,8 @@ async def Open_Cash_Register(cash_register_body: cash_register, payload: jwt_dep
         "msg": "Error"
     }
     try:
+        create_date = await Get_Time() #<-- obtiene hora
+
         #Validacion MODULO NATIVO: SLS
         permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
         if isinstance(permisos, list) and 'SLS_CRG' in permisos: #APRUEBA PERMISO CRG
@@ -48,8 +50,10 @@ async def Open_Cash_Register(cash_register_body: cash_register, payload: jwt_dep
                             CodeTS= referencia, #si dos graban al mismo tiempo, a uno va rechazar
                             WareID= cash_register_body.WareID,
                             User= payload.get("username") or None,
-                            OpenDate= cash_register_body.OpenDate or None,
-                            CashOpen= cash_register_body.CashOpen
+                            OpenDate= create_date["lima_bd_format"] or None,
+                            CashOpen= cash_register_body.CashOpen,
+                            Item2Code= cash_register_body.code2count,
+                            Item2Total= cash_register_body.total2count,
                         ))
                 affected = session.execute(stmt)
                 session.commit()
@@ -323,12 +327,33 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
         rows = caja_abierta.mappings().all()
 
         if(isinstance(rows, list) and len(rows) > 0 and rows[0]["Status"] == 'O'):
+            
+            #SUBCONSULTA PARA CALCULAR EL TOTAL DE ITEM SELECCIONADO VENDIDOS
+            subq_units = (
+                select(func.coalesce(func.sum(SalesOrderDetail.c.Quantity), 0))
+                .select_from(
+                    SalesOrderDetail.join(
+                        SalesOrder, 
+                        SalesOrderDetail.c.DocEntry == SalesOrder.c.DocEntry
+                    )
+                )
+                .where(
+                    SalesOrderDetail.c.idProduct == CashRegister.c.Item2Code,
+                    SalesOrder.c.CashBoxTS == CashRegister.c.CodeTS
+                )
+                .correlate(CashRegister)
+                .scalar_subquery()
+            )
+
             #Validacion si tiene permisos para caja aperturada
             stmt = (
                     select(
                         CashRegister.c.User,
                         CashRegister.c.OpenDate,
                         CashRegister.c.CashOpen,
+                        CashRegister.c.Item2Total,
+                        CashRegister.c.Item2Code,
+                        subq_units.label("Item2Sold"),
                         (
                             func.coalesce(func.sum(
                                     case(
@@ -478,7 +503,6 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
 
             if result.rowcount > 0:
 
-
                 session.commit()
 
                 ##################### GRABA CIERRE DE CAJA
@@ -504,7 +528,6 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                                )
                         .filter(CashRegister.c.CodeTS == cash_register_body.CodeTS))
                 
-
                 response = session.execute(stmt).mappings().all()
             
                 # results = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
@@ -518,7 +541,9 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                             "card_total_walletmch": "0.00" if idx["card_total_walletmch"] is None else idx["card_total_walletmch"].to_eng_string(),
                             "wallet_total_phone": "0.00" if idx["wallet_total_phone"] is None else idx["wallet_total_phone"].to_eng_string(),
                             "date": "no-date" if idx["date"] is None else idx["date"].strftime("%d/%m/%Y"),
-                            "vendedor": "no-vendedor" if idx["vendedor"] is None else idx["vendedor"]
+                            "vendedor": "no-vendedor" if idx["vendedor"] is None else idx["vendedor"],
+                            "item2Sold": 0 if Montos_totales["Item2Sold"] is None else int(Montos_totales["Item2Sold"]),
+                            "item2Total": 0 if Montos_totales["Item2Total"] is None else Montos_totales["Item2Total"]
                             } 
                            for idx in response]
                 
@@ -925,7 +950,9 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
             "card_total_plus_wallet_machine": body.card_total_walletmch,
             "wallet_no_machine_total": body.wallet_total_phone,
             "date": body.date,
-            "vendedor": body.vendedor
+            "vendedor": body.vendedor,
+            "item2Sold": body.item2Sold,
+            "item2Total": body.item2Total
         }
 
         items = [{"enum": idx.enum, "pay_method": idx.pay_method , "dscp": idx.dscp, "qty": idx.qty, "total_linea": idx.total_linea}

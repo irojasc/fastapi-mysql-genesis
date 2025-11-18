@@ -18,6 +18,8 @@ CashRegister = Table("CashRegister", meta,
                     Column("WalletTotalM", DECIMAL(7, 2), nullable=True),
                     Column("WalletTotalC", DECIMAL(7, 2), nullable=True),
                     Column("Obs", String(45), nullable=True),
+                    Column("Item2Code", Integer, nullable=True),
+                    Column("Item2Total", Integer, nullable=True),
                 )
 meta.create_all(bind=engine)
 
