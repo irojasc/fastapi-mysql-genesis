@@ -23,6 +23,10 @@ class cash_register(BaseModel):
     code2count: Optional[str] = None
     total2count: Optional[int] = None
 
+class sales_request(BaseModel):
+    WareID: Optional[int] = None #obligatorio
+    Date: Optional[str] = None #obligatorio
+    IdItem: Optional[int] = 2
 
 
 class item(BaseModel):

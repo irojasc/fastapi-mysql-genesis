@@ -11,14 +11,15 @@ from sqlmodel.salesorderdetail import SalesOrderDetail
 from sqlmodel.company import Company
 from sqlmodel.pymntgroup import PymntGroup
 from sqlmodel.product import Product
-from basemodel.sales import cash_register, sales_order, Body_Ticket, Body_Ticket_Close, Item_Ticket_Close
+from basemodel.sales import cash_register, sales_order, Body_Ticket, Body_Ticket_Close, Item_Ticket_Close, sales_request
 from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
 from config.db import con, session
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from collections import defaultdict
 
 sales_route = APIRouter(
     prefix = '/sales',
@@ -128,6 +129,332 @@ async def Get_Sales_Order_By_CashRegisterCode(cash_register_body: cash_register 
         for item in returned_value:
             item["DocDate"] = item["DocDate"].strftime("%d/%m %H:%M")
         
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
+        print(f"""Detalle SQLAlchemy: {e.orig}""")
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
+        print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    finally:
+        session.close()
+        return returned_value
+    
+
+@sales_route.get("/get_sales_order_by_ware_and_date/", status_code=200)
+async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = Depends(), payload: jwt_dependecy = None):
+    returned_value = {}
+    date_current = cash_register_body.Date
+    date_bottom = None
+    date_top = None
+
+    try:
+        
+        #Validacion MODULO NATIVO: SLS
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
+        
+        if isinstance(permisos, list) and 'SLS_ASR' in permisos: #APRUEBA PERMISO SLS_ASR
+            
+            if isinstance(permisos, list) and 'SLS_WDY' in permisos: #APRUEBA PERMISO SLS_WDY, PARA VER TODOS LOS REGISTROS
+                start_date = dt.strptime(cash_register_body.Date, "%Y-%m-%d")
+                end_date = start_date + timedelta(days=1)
+            else:
+                async def validate_date_range(input_date_str: str) -> dict:
+
+                    # Fecha superior: hoy (formato del sistema)
+                    time_x = await Get_Time()
+                    date_top = dt.strptime(time_x["lima_transfer_format"], "%Y-%m-%d").date()
+
+                    # Fecha inferior: 4 días atrás
+                    date_bottom = date_top - timedelta(days=4) # intervalo permitido para que los que no tienen permiso
+
+                    # Convertimos input a fecha
+                    try:
+                        input_date = dt.strptime(input_date_str, "%Y-%m-%d").date()
+                    except ValueError:
+                        # Si el input no tiene formato correcto, forzamos fecha superior
+                        input_date = date_top
+
+                    # Evaluación del rango
+                    if input_date < date_bottom or input_date > date_top:
+                        current_date = date_top
+                    else:
+                        current_date = input_date
+
+                    # Construir respuesta en formato string
+                    return date_top.strftime("%Y-%m-%d"), date_bottom.strftime("%Y-%m-%d"), current_date.strftime("%Y-%m-%d")
+                
+                date_top, date_bottom, date_current  = await validate_date_range(input_date_str = cash_register_body.Date)
+                
+                # date_current = date_bottom
+                start_date = dt.strptime(date_current, "%Y-%m-%d")
+                end_date = start_date + timedelta(days=1)
+
+       
+            #FUNCIONA PARA CAMBIAR A BASE36
+            def to_base36(num_str):
+                num = int(num_str)
+                chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                base36 = ""
+                while num > 0:
+                    num, i = divmod(num, 36)
+                    base36 = chars[i] + base36
+                return base36
+
+            #FUNCIONA PARA DAR FORMATO CABECERA / DETALLE
+            def build_sales_response(ventas):
+                # --- 1) Calcular totales por tipo de pago ---
+                totales = defaultdict(Decimal)
+
+                for v in ventas:
+                    totales[v["TipoPago"]] += v["DocTotal"]
+
+                # Convertir Decimal → string para JSON seguro
+                cabecera = {tipo: format(total, "f") for tipo, total in totales.items()}
+
+                # --- 2) Preparar detalle con conversiones seguras ---
+                detalle = []
+                for v in ventas:
+                    item = v.copy()
+                    item["DocTotal"] = format(item["DocTotal"], "f")  # Decimal → string
+
+                    # convertir fecha a un formato estándar
+                    item["DocDate"] = item["DocDate"].strftime("%d/%m %H:%M")
+
+                    # convertir CODETS a hex36
+                    item["CodeTS"] = "" if item["CodeTS"] is None else to_base36(item["CodeTS"])
+
+                    detalle.append(item)
+
+                # --- 3) Armar diccionario final ---
+                return {
+                    "cabecera": cabecera,
+                    "detalle": detalle
+                }
+
+            stmt = (select( SalesOrder.c.DocEntry,
+                            SalesOrder.c.CashBoxTS.label("CodeTS"),
+                            SalesOrder.c.DocNum,
+                            DocType.c.DocTypeName.label("DocType"),
+                            SalesOrder.c.DocDate,
+                            SalesOrder.c.SlpCode,
+                            Company.c.docName.label("CardName"),
+                            SalesOrder.c.DocTotal,
+                            SalesOrder.c.DocCur.label("Moneda"),
+                            PymntGroup.c.PymntGroupName.label("TipoPago")
+                        )
+                    .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
+                    .join(Company, SalesOrder.c.CardCode == Company.c.cardCode)
+                    .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
+                    .join(CashRegister, SalesOrder.c.CashBoxTS == CashRegister.c.CodeTS)
+                    .filter(
+                        SalesOrder.c.DocDate >= start_date,
+                        SalesOrder.c.DocDate < end_date,
+                        CashRegister.c.WareID == cash_register_body.WareID
+                    )
+                    .order_by(desc(SalesOrder.c.DocDate))
+                    )
+
+            returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
+
+            returned_value = build_sales_response(returned_value)
+            returned_value.update({"status": True, 
+                                   "message": "ok",
+                                   "dates": {
+                                        "date_current": date_current,
+                                        "date_bottom": date_bottom,
+                                        "date_top": date_top
+                                        }
+                                    }
+                                   )
+
+        else:
+            returned_value.update({
+                                    "status": False, 
+                                    "message": "No cuenta con permisos revisar los reportes", 
+                                    "cabecera": {}, 
+                                    "detalle": [],
+                                    "dates": {
+                                        "date_current": date_current,
+                                        "date_bottom": None,
+                                        "date_top": None
+                                        }
+                                    }
+                                )
+
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
+        print(f"""Detalle SQLAlchemy: {e.orig}""")
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
+        print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    finally:
+        session.close()
+        return returned_value
+
+@sales_route.get("/get_detail_sales_order/", status_code=200)
+async def Get_Detail_Sales_Order(cash_register_body: sales_request = Depends(), payload: jwt_dependecy = None):
+    returned_value = {}
+    date_current = cash_register_body.Date
+    date_bottom = None
+    date_top = None
+
+    try:
+        #Validacion MODULO NATIVO: SLS
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
+        
+        if isinstance(permisos, list) and 'SLS_ASR' in permisos: #APRUEBA PERMISO SLS_ASR
+            if isinstance(permisos, list) and 'SLS_WDY' in permisos: #APRUEBA PERMISO SLS_WDY, PARA VER TODOS LOS REGISTROS
+                start_date = dt.strptime(cash_register_body.Date, "%Y-%m-%d")
+                end_date = start_date + timedelta(days=1)
+            else:
+                async def validate_date_range(input_date_str: str) -> dict:
+
+                    # Fecha superior: hoy (formato del sistema)
+                    time_x = await Get_Time()
+                    date_top = dt.strptime(time_x["lima_transfer_format"], "%Y-%m-%d").date()
+
+                    # Fecha inferior: 4 días atrás
+                    date_bottom = date_top - timedelta(days=4) # intervalo permitido para que los que no tienen permiso
+
+                    # Convertimos input a fecha
+                    try:
+                        input_date = dt.strptime(input_date_str, "%Y-%m-%d").date()
+                    except ValueError:
+                        # Si el input no tiene formato correcto, forzamos fecha superior
+                        input_date = date_top
+
+                    # Evaluación del rango
+                    if input_date < date_bottom or input_date > date_top:
+                        current_date = date_top
+                    else:
+                        current_date = input_date
+
+                    # Construir respuesta en formato string
+                    return date_top.strftime("%Y-%m-%d"), date_bottom.strftime("%Y-%m-%d"), current_date.strftime("%Y-%m-%d")
+                
+                date_top, date_bottom, date_current  = await validate_date_range(input_date_str = cash_register_body.Date)
+                
+                # date_current = date_bottom
+                start_date = dt.strptime(date_current, "%Y-%m-%d")
+                end_date = start_date + timedelta(days=1)
+
+    
+            #FUNCIONA PARA CAMBIAR A BASE36
+            def to_base36(num_str):
+                num = int(num_str)
+                chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                base36 = ""
+                while num > 0:
+                    num, i = divmod(num, 36)
+                    base36 = chars[i] + base36
+                return base36
+
+            #FUNCIONA PARA DAR FORMATO CABECERA / DETALLE
+            def build_sales_response(ventas):
+                # --- 1) Calcular totales por tipo de pago ---
+                totales = defaultdict(Decimal)
+
+                for v in ventas:
+                    totales[v["TipoPago"]] += v["DocTotal"]
+
+                # Convertir Decimal → string para JSON seguro
+                cabecera = {tipo: format(total, "f") for tipo, total in totales.items()}
+
+                # --- 2) Preparar detalle con conversiones seguras ---
+                detalle = []
+                for v in ventas:
+                    item = v.copy()
+                    item["DocTotal"] = format(item["DocTotal"], "f")  # Decimal → string
+
+                    # convertir fecha a un formato estándar
+                    item["DocDate"] = item["DocDate"].strftime("%H:%M")
+
+                    # convertir CODETS a hex36
+                    item["CodeTS"] = "" if item["CodeTS"] is None else to_base36(item["CodeTS"])
+
+                    detalle.append(item)
+
+                # --- 3) Armar diccionario final ---
+                return {
+                    "cabecera": cabecera,
+                    "detalle": detalle
+                }
+
+            stmt = (select( 
+                            SalesOrder.c.DocEntry,
+                            SalesOrder.c.CashBoxTS.label("CodeTS"),
+                            SalesOrder.c.DocNum,
+                            SalesOrder.c.SlpCode,
+                            SalesOrder.c.DocDate,
+                            Product.c.id,
+                            Product.c.isbn.label("ISBN"),
+                            Product.c.title.label("Title"),
+                            SalesOrder.c.DocCur.label("Moneda"),
+                            SalesOrderDetail.c.Total.label("DocTotal"),
+                            PymntGroup.c.PymntGroupName.label("TipoPago")
+                        )
+                    .join(SalesOrderDetail, SalesOrder.c.DocEntry == SalesOrderDetail.c.DocEntry)
+                    .join(Product, SalesOrderDetail.c.idProduct == Product.c.id)
+                    .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
+                    .join(CashRegister, SalesOrder.c.CashBoxTS == CashRegister.c.CodeTS)
+                    .filter(
+                        SalesOrder.c.DocDate >= start_date,
+                        SalesOrder.c.DocDate < end_date,
+                        CashRegister.c.WareID == cash_register_body.WareID,
+                        Product.c.idItem == cash_register_body.IdItem
+                    )
+                    .order_by(desc(SalesOrder.c.DocDate))
+                    )
+
+            returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
+
+            returned_value = build_sales_response(returned_value)
+            returned_value.update({"status": True, 
+                                   "message": "ok",
+                                    "dates": {
+                                        "date_current": date_current,
+                                        "date_bottom": date_bottom,
+                                        "date_top": date_top
+                                    }})
+
+        else:
+            returned_value.update({
+                                    "status": False, 
+                                    "message": "No cuenta con permisos revisar los reportes", 
+                                    "cabecera": {}, 
+                                    "detalle": [],
+                                    "dates": {
+                                        "date_current": date_current,
+                                        "date_bottom": None,
+                                        "date_top": None
+                                        }
+                                    }
+                                )
+
     except Exception as e:
         print(f"An error ocurred: {e}")
         session.rollback()
