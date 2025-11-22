@@ -682,6 +682,10 @@ async def run_inventory_mode(input_param: ware_edited = None, jwt_dependency: jw
         "message": ""
     }
     try:
+        
+        #HORA DE REGISTRO
+        create_date = await Get_Time()
+
         result_1 = session.execute(update(Ware_Product)
                                    .where(and_(Ware_Product.c.idWare == input_param.wareCode,
                                                or_(Ware_Product.c.qtyNew != 0,
@@ -694,11 +698,17 @@ async def run_inventory_mode(input_param: ware_edited = None, jwt_dependency: jw
         if(result_1.rowcount >= 0):
             #(2)#luego actualiza la fecha de inventario
             # 2025-04-13
+            # result_2 = session.execute(update(Ware)
+            #                             .where(and_(Ware.c.id == input_param.wareCode,
+            #                                        or_(Ware.c.inv_date != input_param.editDate,
+            #                                            Ware.c.inv_date == None)))
+            #                             .values(inv_date = input_param.editDate)
+            #                             )
             result_2 = session.execute(update(Ware)
                                         .where(and_(Ware.c.id == input_param.wareCode,
-                                                   or_(Ware.c.inv_date != input_param.editDate,
+                                                   or_(Ware.c.inv_date != create_date["lima_transfer_format"],
                                                        Ware.c.inv_date == None)))
-                                        .values(inv_date = input_param.editDate)
+                                        .values(inv_date = create_date["lima_transfer_format"])
                                         )
             # result_3 = session.execute(update(Ware).where((Ware.c.id == input_param.wareCode) & (Ware.c.inv_clean == 1)).\
             #                          values(inv_clean = b'\x00'))
