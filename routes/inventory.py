@@ -696,14 +696,6 @@ async def run_inventory_mode(input_param: ware_edited = None, jwt_dependency: jw
                                     )   
         session.commit()
         if(result_1.rowcount >= 0):
-            #(2)#luego actualiza la fecha de inventario
-            # 2025-04-13
-            # result_2 = session.execute(update(Ware)
-            #                             .where(and_(Ware.c.id == input_param.wareCode,
-            #                                        or_(Ware.c.inv_date != input_param.editDate,
-            #                                            Ware.c.inv_date == None)))
-            #                             .values(inv_date = input_param.editDate)
-            #                             )
             result_2 = session.execute(update(Ware)
                                         .where(and_(Ware.c.id == input_param.wareCode,
                                                    or_(Ware.c.inv_date != create_date["lima_transfer_format"],
@@ -761,12 +753,11 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
             response["message"] = f'Se actualizo Transfer con codigo {invoice.codeTS}'
             response["result"] = False
         else:
-            toDat_e = create_date["lima_transfer_format"]
             #baja en uno el state y actuliza las cantidades en ware_product
             session.execute(update(Transfer).
                             where(Transfer.c.codeTS == invoice.codeTS).
                             values(state = Transfer.c.state - 1,
-                                    toDate= toDat_e))
+                                    toDate = create_date["lima_transfer_format"]))
             session.commit()
             #actualiza las cantidades en ware_product
             items_quantity = session.query(Transfer_Product.c.idProduct, Transfer_Product.c.qtyNew, Transfer_Product.c.qtyOld). \
@@ -778,7 +769,7 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
                 'qtyN': x[1],
                 'qtyO': x[2],
                 # 'editDa': invoice.toDate,
-                'editDa': toDat_e or None,
+                'editDa': create_date["lima_bd_format"] or None,
                 'idPro' : int(x[0]),
                 'idWa' : id_toWare}, items_quantity))
             
@@ -789,7 +780,7 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
                 response["state"] = True
                 response["message"] = f'Se agregaron items con codigo {invoice.codeTS}'
                 response["result"] = True
-                partes = toDat_e.split("-") # <- split para cambiar el orden de la fecha
+                partes = create_date["lima_transfer_format"].split("-") # <- split para cambiar el orden de la fecha
                 response["toDate"] = partes[2] + '-' + partes[1] + '-' + partes[0] #<- fecha requerida para frond
 
     except Exception as e:

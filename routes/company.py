@@ -294,7 +294,11 @@ async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=Non
 
             else: #si es None, trae todo los resultados
                 stmt = (
-                    select(Company, CompanyContacts.c.Name.label("contact_name"), CompanyContacts.c.Phone, CompanyContacts.c.Email, Ubigeo.c.dep_name)
+                    select(Company, 
+                           CompanyContacts.c.Name.label("contact_name"), 
+                           CompanyContacts.c.Phone, 
+                           CompanyContacts.c.Email, 
+                           Ubigeo.c.dep_name)
                     .join(CompanyContacts, and_(Company.c.cardCode == CompanyContacts.c.cardCode, CompanyContacts.c.DefaultContact == 1), isouter=True)
                     .join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True)
                     .where(Company.c.active == 1)
