@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 # from sqlalchemy import select, insert, delete, asc, func
-from sqlalchemy import select, asc, func, insert, and_, or_
+from sqlalchemy import select, asc, func, insert, and_, or_, update
+from sqlalchemy.dialects.mysql import insert as insert_dialect
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session
 from sqlmodel.company import Company
@@ -12,9 +13,10 @@ from sqlmodel.companycontacts import CompanyContacts
 from sqlmodel.companyaccounts import CompanyAccounts
 from basemodel.company import BusinessPartner
 from sqlmodel.ubigeo import Ubigeo
-from functions.company import get_all_companies, get_ubigeos_format
+from functions.company import get_all_companies, get_ubigeos_format, get_company_foredit
 from functions.catalogs import normalize_last_sync
 from service.company import get_partner_by_ruc_dni # consume servicio de reniec o sunat
+from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
 from datetime import datetime
 import json
@@ -31,47 +33,111 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
     status_code = 200
     try:
         if CardCode is not None:
-            ##EDITAAAR VA EN ESTAR PARTE
-            returnedValue.update({"body":{}})
+            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS')
+        
+            if isinstance(permisos, list) and 'SLS_EBP' in permisos: #APRUEBA PERMISO SLS_ASR
+                stmt = (
+                    select(
+                            Company.c.type.label("tipo_socio"),
+                            Company.c.DocType.label("tipo_documento"),
+                            Company.c.LicTradNum.label("numero_documento"),
+                            Company.c.cardCode.label("codigo_socio"),
+                            Company.c.docName.label("nombre"),
+                            Company.c.BusinessName.label("nombre_comercial"),
+                            Company.c.address.label("direccion"),
+                            Company.c.CardStatus.label("estado"),
+                            Company.c.CardCond.label("condicion"),
+                            Company.c.Currency.label("moneda"),
+                            Company.c.TermCode.label("condicion_pago"),
+                            Ubigeo.c.dep_id.label("dep_id"),
+                            Ubigeo.c.pro_id.label("pro_id"),
+                            Ubigeo.c.dis_id.label("dis_id"),
+                            Ubigeo.c.dep_name.label("dep_name"),
+                            Ubigeo.c.pro_name.label("pro_name"),
+                            Ubigeo.c.dis_name.label("dis_name"),
+                            CompanyContacts.c.LineId.label("id"),
+                            CompanyContacts.c.Name.label("nombre_contacto"),
+                            CompanyContacts.c.Phone.label("telefono"),
+                            CompanyContacts.c.Email.label("correo"),
+                            CompanyContacts.c.DefaultContact.label("default"),
+                        )
+                    .join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True)
+                    .join(CompanyContacts, Company.c.cardCode == CompanyContacts.c.cardCode, isouter=True)
+                    .where(Company.c.cardCode == CardCode)
+                )
+                importado = session.execute(stmt).mappings().all()
+
+                if len(importado):
+
+                    formated_importado = get_company_foredit(data_list=importado)
+
+                    if bool(formated_importado):
+
+                        #AGREGA CAMPOS FALTANTES | PARA CLIENTE NO SE ACTUALIZA POR ESO SE ENVIA GENERICO
+                        #TODO ESTE CUERPO ES PARA EL CASO DEL CLIENTE, PARA EL OTRO CASO SE NECESITA RETORNAR MAS CAMPOS 🎃
+
+                        formated_importado.update(
+                            {
+                            "cuenta_bancaria": {"tipo_cuenta": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None } #tipo de moneda sale por que ira en condiciones generales
+                            ,
+                            "bancos": [], #no se va actualizar en cliente
+                            "monedas": [], #no se va actualizar en cliente
+                            "condiciones_pago": [] #no se va actualizar en cliente, por eso no se envia
+                            }
+                        )
+
+                        ##EDITAR VA EN ESTA PARTE
+                        returnedValue.update({"body": formated_importado})
+
+            else:
+                status_code = 422
+                returnedValue = {"body": {}, "message": "No tiene permiso para editar cliente"}
+
         else:
-            #Consulta bancos
-            banks = session.query(Banks.c.BankCodeApi, Banks.c.BankName) \
-            .order_by(Banks.c.BankName.asc()) \
-            .all()
+            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS')
+        
+            if isinstance(permisos, list) and 'SLS_NBP' in permisos: #APRUEBA PERMISO SLS_ASR
+                #Consulta bancos
+                banks = session.query(Banks.c.BankCodeApi, Banks.c.BankName) \
+                .order_by(Banks.c.BankName.asc()) \
+                .all()
 
-            #Consulta terminos de pago
-            paymentterms = session.query(PaymentTerms.c.TermCode, PaymentTerms.c.TermName) \
-            .order_by(PaymentTerms.c.TermName.asc()) \
-            .all()
+                #Consulta terminos de pago
+                paymentterms = session.query(PaymentTerms.c.TermCode, PaymentTerms.c.TermName) \
+                .order_by(PaymentTerms.c.TermName.asc()) \
+                .all()
 
-            #Consulta monedas
-            currency = session.query(OCUR.c.CurrCode, OCUR.c.CurrName) \
-            .all()
+                #Consulta monedas
+                currency = session.query(OCUR.c.CurrCode, OCUR.c.CurrName) \
+                .all()
 
-            returnedValue.update({"body":{
-                "tipo_socio": None, # S o P : Supplier o Provider
-                "tipo_documento": None, #
-                "numero_documento": None,
-                "nombre": None,
-                "nombre_comercial": None,
-                "direccion": None,
-                "departamento": None,
-                "provincia": None,
-                "distrito": None,
-                "estado": None,
-                "condicion": None,
-                "contactos": {
-                    "1": {"nombre": None, "telefono": None, "correo": None, "default": True},
-                    "2": {"nombre": None, "telefono": None, "correo": None, "default": False}
-                },
-                # "cuenta_bancaria": {"tipo_cuenta": None, "tipo_moneda": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None },
-                "cuenta_bancaria": {"tipo_cuenta": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None }, #tipo de moneda sale por que ira en condiciones generales
-                "condicion_pago": "CASH", #SE DEFINE POR DEFECTO CONTADO
-                "moneda": "PEN", #SE DEFINE POR DEFECTO SOLES
-                "bancos": list(map(lambda x: {"id": x[0], "name": x[1]}, banks)),
-                "condiciones_pago": list(map(lambda x: {"id": x[0], "name": x[1]}, paymentterms)),
-                "monedas": list(map(lambda x: {"id": x[0], "name": x[1]}, currency))
-            }})
+                returnedValue.update({"body":{
+                    "tipo_socio": None, # S o P : Supplier o Provider
+                    "tipo_documento": None, #
+                    "numero_documento": None,
+                    "nombre": None,
+                    "nombre_comercial": None,
+                    "direccion": None,
+                    "departamento": None,
+                    "provincia": None,
+                    "distrito": None,
+                    "estado": None,
+                    "condicion": None,
+                    "contactos": {
+                        "1": {"nombre": None, "telefono": None, "correo": None, "default": True},
+                        "2": {"nombre": None, "telefono": None, "correo": None, "default": False}
+                    },
+                    "cuenta_bancaria": {"tipo_cuenta": None, "banco": None, "n_cuenta": None, "n_cci": None, "titular": None }, #tipo de moneda sale por que ira en condiciones generales
+                    "condicion_pago": "CASH", #SE DEFINE POR DEFECTO CONTADO
+                    "moneda": "PEN", #SE DEFINE POR DEFECTO SOLES
+                    "bancos": list(map(lambda x: {"id": x[0], "name": x[1]}, banks)),
+                    "condiciones_pago": list(map(lambda x: {"id": x[0], "name": x[1]}, paymentterms)),
+                    "monedas": list(map(lambda x: {"id": x[0], "name": x[1]}, currency))
+                }})
+            else:
+                status_code = 422
+                returnedValue = {"body": {}, "message": "No tiene permiso para crear clientes"}
+
 
     except Exception as e:
         session.rollback()
@@ -85,6 +151,102 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
             content=returnedValue
         )
 
+# docName = BusinessPartner.nombre or None, # no se cambia 🎃
+# type = BusinessPartner.tipo_socio or None, # no cambia type
+# DocType = BusinessPartner.tipo_documento or None, # no cambia, ruc dni
+# CardStatus = BusinessPartner.estado or None, # no cambia por el momento, debe existir un actualizador
+# CardCond = BusinessPartner.condicion or None, # no cambie por el momento
+# TermCode = BusinessPartner.condicion_pago or None,
+# Currency = BusinessPartner.moneda or None 🎃
+
+@company_route.patch("/business_partner/", status_code=201)
+async def Edit_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency: jwt_dependecy = None):
+    returnedValue = {"body": {}, "message": "Socio actualizado!!"}
+    status_code = 201
+    try:
+        #HORA DE REGISTRO
+        create_date = await Get_Time()
+
+        #OBTIENE EL IDUBIGEO
+        ubigeo = session.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
+                filter(Ubigeo.c.dep_id == BusinessPartner.departamento). \
+                filter(Ubigeo.c.pro_id == BusinessPartner.provincia). \
+                filter(Ubigeo.c.dis_id == BusinessPartner.distrito). \
+                first() 
+
+        #INSERTA DATO SOCIO DE NEGOCIO
+        stmt = (
+             update(Company)
+            .where(Company.c.cardCode == BusinessPartner.codigo_socio)  # condición para actualizar
+            .values(
+                address = BusinessPartner.direccion or None,
+                idUbigeo = ubigeo.idUbigeo if ubigeo is not None else None,
+                LicTradNum = BusinessPartner.numero_documento or None, # no cambia lictradnum
+                updateDate = create_date["lima_bd_format"] or None,
+                BusinessName = BusinessPartner.nombre_comercial or None,
+                UserSign = BusinessPartner.usuario_creacion or None,
+            )
+        )
+
+        res_partner = session.execute(stmt)
+        session.commit()
+        rowsAffected = res_partner.rowcount
+        if(rowsAffected > 0): #VERIFICA QUE REGISTRA SOCIO PARA REGISTRAR CONTACTOS Y CUENTAS
+            if len(BusinessPartner.contactos) > 0:
+                
+                for contact in BusinessPartner.contactos:
+                    stmt = insert_dialect(CompanyContacts).values(
+                        cardCode=BusinessPartner.codigo_socio,
+                        LineId=contact.id,
+                        Name=contact.nombre,
+                        Phone=contact.telefono,
+                        Email=contact.correo,
+                        DefaultContact=int(contact.default),
+                        creationDate=create_date["lima_bd_format"] or None,
+                    )
+
+                    # UPSERT → si existe actualiza, sino inserta
+                    upsert_stmt = stmt.on_duplicate_key_update(
+                        Name=stmt.inserted.Name,
+                        Phone=stmt.inserted.Phone,
+                        Email=stmt.inserted.Email,
+                        DefaultContact=stmt.inserted.DefaultContact,
+                        updateDate=stmt.inserted.creationDate,
+                    )
+
+                    res = session.execute(upsert_stmt)
+
+                    if res.rowcount > 0:
+                        print(f"Contacto procesado: {contact.nombre}")
+                    else:
+                        returnedValue.update({"message": "Error al intentar grabar contactos"})
+                        break
+                
+                session.commit()
+
+            else:
+                print("No aplica cambios en contactos")
+
+            #RETORNAR SOCIO CREADO
+            value = await Get_All_Business_Partners_By_Param(CardCode=BusinessPartner.codigo_socio)
+            returnedValue.update({"body": value})
+
+        else:
+            status_code=422,
+            returnedValue.update({"message": "Error al editar socio"})
+
+    except Exception as e:
+        session.rollback()
+        print(f"An error ocurred: {e}")
+        returnedValue.update({"message": f"An error ocurred: {e}"})
+        status_code=422,
+    finally:
+        session.close()
+        return JSONResponse(
+            status_code= status_code[0] if isinstance(status_code, tuple) else status_code,
+            content=returnedValue
+        )
+    
 @company_route.post("/business_partner/", status_code=201)
 async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency: jwt_dependecy = None):
     returnedValue = {"body": {}, "message": "Socio creado!!"}

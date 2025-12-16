@@ -28,6 +28,16 @@ class sales_request(BaseModel):
     Date: Optional[str] = None #obligatorio
     IdItem: Optional[int] = 2
 
+class external_document(BaseModel):
+    DocEntry: Optional[int] = None #obligatorio
+    QR: Optional[str] = None
+    Hash: Optional[str] = None
+    Status: Optional[int] = None
+    SendDate: Optional[datetime] = None
+    Ticket: Optional[str] = None
+    # pdf_bytes: Optional[str] = None
+    # pdf_url: Optional[str] = None
+
 
 class item(BaseModel):
     id: int
@@ -66,6 +76,7 @@ class sales_order(BaseModel):
     total_monto: str = "0.00"
     terminos_pago: str = 'CASH' #referencia si es contado, credito, etc.
     forma_pago: str #referencia a pago efectivo, tarjeta , etc.
+    id_ware: int
     items: List[item]
 
 

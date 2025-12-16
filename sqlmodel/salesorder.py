@@ -1,9 +1,8 @@
-from sqlalchemy import Table, Column
+# from sqlalchemy import Table, Column
 # from sqlalchemy.sql.sqltypes import Integer, String, Date, _Binary, Float, DateTime, DECIMAL
 from sqlalchemy import (
     Table,
     Column,
-    BigInteger,
     String,
     DateTime,
     DECIMAL,
@@ -11,9 +10,10 @@ from sqlalchemy import (
     Integer
 )
 from config.db import meta, engine
+from sqlalchemy.dialects.mysql import BIGINT
 
 SalesOrder = Table("SalesOrder", meta,
-                Column("DocEntry", BigInteger, nullable=False, unique=True, primary_key=True, autoincrement=True), 
+                Column("DocEntry", BIGINT(unsigned=True), nullable=False, unique=True, primary_key=True, autoincrement=True), 
                 Column("DocNum", String(20), nullable=True),
                 Column("DocType", String(3), nullable=True), 
                 Column("DocDate", DateTime,  nullable=True), 

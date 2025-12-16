@@ -1,8 +1,6 @@
-from sqlalchemy import Table, Column
 from sqlalchemy import (
     Table,
     Column,
-    BigInteger,
     SmallInteger,
     String,
     DateTime,
@@ -10,10 +8,11 @@ from sqlalchemy import (
     Integer
 )
 from config.db import meta, engine
+from sqlalchemy.dialects.mysql import BIGINT
 
 SalesOrderDetail = Table("SalesOrderDetail", meta, 
                 Column("LineNum", Integer, nullable=False, unique=True, primary_key=True, autoincrement=True), 
-                Column("DocEntry", BigInteger, nullable=False),
+                Column("DocEntry", BIGINT(unsigned=True), nullable=False),
                 Column("idProduct", SmallInteger, nullable=False), 
                 Column("Quantity", SmallInteger,  nullable=False), 
                 Column("UnitPrice",DECIMAL(7, 2), nullable=False),

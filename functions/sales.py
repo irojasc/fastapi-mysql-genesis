@@ -603,3 +603,21 @@ def build_body_ticket(data: list[dict]) -> Body_Ticket:
     )
 
     return body
+
+
+def format_to_8digits(n: int, limit: int) -> str:
+    # """
+    # Formatea un número entero n a una cadena con ceros a la izquierda,
+    # usando un límite de dígitos especificado por 'limit'.
+    
+    # Si el número excede la cantidad de dígitos permitidos, retorna None.
+    # """
+    if n < 0 or limit <= 0:
+        return None  # No aceptamos negativos ni límites inválidos
+
+    num_str = str(n)
+
+    if len(num_str) > limit:
+        return None
+
+    return num_str.zfill(limit)

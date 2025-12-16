@@ -18,6 +18,7 @@ class Contact(BaseModel):
 
 
 class BusinessPartner(BaseModel):
+    codigo_socio: Optional[str] = None
     tipo_socio: Optional[str] = None
     tipo_documento: Optional[str] = None
     numero_documento: Optional[str] = None
@@ -34,32 +35,5 @@ class BusinessPartner(BaseModel):
     cuenta_bancaria: Optional[List[BankAccount]] = None
     usuario_creacion: Optional[str] = None
     moneda: Optional[str] = None
-
-    # # 👉 Nuevo campo
-    # id_documento: Optional[int] = None
-    # # fecha_creacion: Optional[str] = None <--estara controlado por los datos del  backen
-
-    # @root_validator(pre=True)
-    # def set_id_documento(cls, values):
-    #     tipo = values.get("tipo_documento")
-
-    #     if tipo is None:
-    #         values["id_documento"] = None
-    #     else:
-    #         tipo_upper = tipo.upper()
-    #         if tipo_upper == "SD": #sin documento
-    #             values["id_documento"] = 0
-    #         elif tipo_upper == "DNI": #dni
-    #             values["id_documento"] = 1
-    #         elif tipo_upper == "RUC": #ruc
-    #             values["id_documento"] = 2
-    #         elif tipo_upper == "CE": #carnet de extranjeria
-    #             values["id_documento"] = 3
-    #         elif tipo_upper == "PAS": #pasaporte
-    #             values["id_documento"] = 4
-    #         else:
-    #             values["id_documento"] = None
-
-    #     return values
 
 

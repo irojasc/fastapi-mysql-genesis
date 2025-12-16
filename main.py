@@ -14,6 +14,7 @@ from routes.authorization import authorization_route
 from routes.catalogs import catalog_route
 from routes.prices import price_route
 from routes.sales import sales_route
+from routes.series import series_route
 # from routes.requests import request_route
 
 
@@ -42,7 +43,7 @@ app.include_router(authorization_route)
 app.include_router(catalog_route) #aqui viene toda la data, monedas, unidades de medida, impuestos - data transversal
 app.include_router(price_route)
 app.include_router(sales_route)
-# app.include_router(request_route)
+app.include_router(series_route)
 
 @app.get("/", status_code=status.HTTP_200_OK, tags=['Default'])
 async def default():
