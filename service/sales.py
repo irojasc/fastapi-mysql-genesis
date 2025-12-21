@@ -1,5 +1,5 @@
 import requests
-from config.db import MIFACT_TOKEN
+from config.db import MIFACT_TOKEN, MIFACT_ENDPOINT
 import json
 
 # params: cuerpo solicitado por mifact
@@ -8,7 +8,7 @@ async def post_sales_document(params:dict={}):
         params.update({"TOKEN": MIFACT_TOKEN}) # <- agrega token mifact
         try:
             # print(json.dumps(params, indent=4, ensure_ascii=False))
-            endpoint = f"""https://demo.mifact.net.pe/api/invoiceService.svc/SendInvoice"""
+            endpoint = f"""{MIFACT_ENDPOINT}SendInvoice"""
             response = requests.post(endpoint, json=params, timeout=30)
             return response.json(), response.status_code
         except Exception as e:

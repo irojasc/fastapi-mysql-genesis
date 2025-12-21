@@ -1041,15 +1041,15 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
             # "TOKEN":"gN8zNRBV+/FVxTLwdaZx0w==", # token del emisor, este token gN8zNRBV+/FVxTLwdaZx0w== es de pruebas
             boleta_json =  {
                 "COD_TIP_NIF_EMIS": "6", # "6": RUC PARA EMISOR
-                "NUM_NIF_EMIS": "20100100100", # RUC DE PRUEBAS
+                "NUM_NIF_EMIS": "10727329001", # RUC DE PRODUCCION
                 "NOM_RZN_SOC_EMIS": "ROJAS CARRASCO IVAN ALEXIS", # RAZON SOCIAL EMISOR PRUEBA
-                "NOM_COMER_EMIS": "Museo Libreria Genesis", # NOMBRE COMERCIAL EMISOR | ESTE DATO PUEDE IR EN EL DOCUMENTO ?
-                "COD_UBI_EMIS": "080101", # DATO REAL 🎃
+                "NOM_COMER_EMIS": "MUSEO LIBRERIA GENESIS", # NOMBRE COMERCIAL EMISOR | ESTE DATO PUEDE IR EN EL DOCUMENTO ?
+                "COD_UBI_EMIS": "080101", # DATO REAL UBIGEO 🎃
                 "TXT_DMCL_FISC_EMIS": "CAL. SANTA CATALINA ANCHA 307", # DATO REAL 🎃
                 "COD_MND": "PEN", #DATO REAL FIJO 🎃
                 "COD_PRCD_CARGA": "001", #DATO REAL FIJO PARA PROCEDENCIA WEB SERVICE 🎃
                 # "TIP_CAMBIO":"1.000", # NO VA POR QUE TODO SERA (PEN)
-                "COD_PTO_VENTA": payload.get("username") or "", #codigo vendedor # FALTA LLENAR ESTA DATA
+                "COD_PTO_VENTA": payload.get("username") or "", #codigo vendedor
                 "ENVIAR_A_SUNAT": "true",
                 "RETORNA_XML_ENVIO": "true",
                 "RETORNA_XML_CDR": "false",
@@ -1074,10 +1074,9 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
             
             # #ITEMS
             items = []
-            for item in body.items:
-
+            for index, item in enumerate(body.items):
                 VAL_UNIT_ITEM_SIN_FORMATO = (Decimal(item.pv_no_igv) - Decimal(item.dsct_user_unit_no_igv))
-                VAL_UNIT_ITEM = VAL_UNIT_ITEM_SIN_FORMATO.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                VAL_UNIT_ITEM = VAL_UNIT_ITEM_SIN_FORMATO.quantize(Decimal("0.0000001"), rounding=ROUND_HALF_UP) #<- 6 deciamles para evitar problema de redondeo
 
                 VAL_VTA_ITEM_SIN_FORMATO = VAL_UNIT_ITEM_SIN_FORMATO * Decimal(item.qty)
                 VAL_VTA_ITEM = VAL_VTA_ITEM_SIN_FORMATO.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -1112,11 +1111,22 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
                 }
             ]})
 
+            # print(boleta_json)
+
             #SE PROCEDE A GRABAR EL CUERPO EN MI FACT
             json_data, status_code = await post_sales_document(params=boleta_json)
-            
 
-            if "estado_documento" in json_data and json_data["estado_documento"] and status_code == 200:
+            print(json_data)
+
+            #RECHAZADO POR EL PROVEEDOR 👻
+            if "estado_documento" in json_data and json_data["estado_documento"] == '' and status_code == 200:
+                
+                returnedValue.update({"message": json_data["errors"],
+                        "status_code": 422,
+                        "data": {}
+                        })
+            
+            elif "estado_documento" in json_data and json_data["estado_documento"] != '104' and status_code == 200:
                 create_date = await Get_Time()
                 returnedValue.update({"message": json_data["sunat_description"],
                                       "status_code": 201,
@@ -1130,6 +1140,33 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
                                           "Ticket": json_data["ticket_sunat"] if json_data["ticket_sunat"] else None
                                         }
                                       })
+            
+            #RECHAZADO POR EL PROVEEDOR 👻
+            elif "estado_documento" in json_data and json_data["estado_documento"] == '104' \
+            and "cdr_sunat" in json_data and not(bool(json_data["cdr_sunat"])) \
+            and "xml_enviado" in json_data and not(bool(json_data["xml_enviado"])) \
+            and status_code == 200:
+                returnedValue.update({"message": json_data["errors"],
+                                      "status_code": 422,
+                                      "data": {}
+                                      })
+            #RECHAZADO POR SUNAT 👻
+            elif "estado_documento" in json_data and json_data["estado_documento"] == '104' \
+            and "cdr_sunat" in json_data and bool(json_data["cdr_sunat"]) \
+            and status_code == 200:
+                returnedValue.update({"message": json_data["sunat_description"],
+                                        "status_code": 201,
+                                        "data": {
+                                          "QR": json_data["cadena_para_codigo_qr"],
+                                          "Hash": json_data["codigo_hash"],
+                                          "Status": int(json_data["estado_documento"]),
+                                          "SendDate": create_date["lima_bd_format"],
+                                          "pdf_bytes": json_data["pdf_bytes"],
+                                          "pdf_url": json_data["url"],
+                                          "Ticket": json_data["ticket_sunat"] if json_data["ticket_sunat"] else None
+                                        }
+                                      })
+                
             else:
                 if "errors" in json_data and json_data["errors"]:
                     returnedValue.update({"message": json_data["errors"]})
