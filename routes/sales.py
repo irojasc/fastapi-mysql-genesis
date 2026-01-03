@@ -18,11 +18,11 @@ from sqlmodel.odtc import ODTC
 from sqlmodel.oafv import OAFV
 from basemodel.sales import cash_register, sales_order, Body_Ticket, Body_Ticket_Close, Item_Ticket_Close, sales_request, external_document
 from basemodel.series import series_internal
-from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close, format_to_8digits
+from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close, format_to_8digits, sincronizar_documentos_pendientes
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
-from config.db import con, session
+from config.db import con, session, MIFACT_MIRUC
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
@@ -254,21 +254,25 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                     "cabecera": cabecera,
                     "detalle": detalle
                 }
+                
 
             stmt = (select( SalesOrder.c.DocEntry,
                             SalesOrder.c.CashBoxTS.label("CodeTS"),
                             SalesOrder.c.DocNum,
-                            DocType.c.DocTypeName.label("DocType"),
+                            SalesOrder.c.DocType,
                             SalesOrder.c.DocDate,
                             SalesOrder.c.SlpCode,
                             Company.c.docName.label("CardName"),
                             SalesOrder.c.DocTotal,
                             SalesOrder.c.DocCur.label("Moneda"),
-                            PymntGroup.c.PymntGroupName.label("TipoPago")
+                            PymntGroup.c.PymntGroupName.label("TipoPago"),
+                            SunatCodes.c.Dscp.label("Status"), #valor por defecto "" cuando sea null
+                            SunatCodes.c.IsFinal.label("Status_level")
                         )
-                    .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
                     .join(Company, SalesOrder.c.CardCode == Company.c.cardCode)
                     .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
+                    .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry, isouter=True)
+                    .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code, isouter=True)
                     .join(CashRegister, SalesOrder.c.CashBoxTS == CashRegister.c.CodeTS)
                     .filter(
                         SalesOrder.c.DocDate >= start_date,
@@ -1041,7 +1045,7 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
             # "TOKEN":"gN8zNRBV+/FVxTLwdaZx0w==", # token del emisor, este token gN8zNRBV+/FVxTLwdaZx0w== es de pruebas
             boleta_json =  {
                 "COD_TIP_NIF_EMIS": "6", # "6": RUC PARA EMISOR
-                "NUM_NIF_EMIS": "10727329001", # RUC DE PRODUCCION
+                "NUM_NIF_EMIS": MIFACT_MIRUC, # RUC DE PRODUCCION
                 "NOM_RZN_SOC_EMIS": "ROJAS CARRASCO IVAN ALEXIS", # RAZON SOCIAL EMISOR PRUEBA
                 "NOM_COMER_EMIS": "MUSEO LIBRERIA GENESIS", # NOMBRE COMERCIAL EMISOR | ESTE DATO PUEDE IR EN EL DOCUMENTO ?
                 "COD_UBI_EMIS": "080101", # DATO REAL UBIGEO 🎃
@@ -1716,3 +1720,41 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
         print(f"An error occurred: {e}")
         returnedVal.update({"message": f"An error occurred: {e}", "status": False, "file": None})
         return returnedVal
+    
+    
+@sales_route.post("/sincronizar_documentos/", status_code=201)
+async def sincronizacion_diaria_madrugada():
+    print("Inicia sincronizacion a la 1 am ....... correcto!")
+
+    # #solo se va considerar dos dias de antiguedad
+    # today_server = await Get_Time() #<-- obtiene hora
+    # today = dt.strptime(today_server["lima_transfer_format"], "%Y-%m-%d")
+    # start_date = today - timedelta(days=2)  # TOMA LOS DOS DIAS ANTERIORES
+
+    # stmt = (select( 
+    #             SalesOrder.c.DocEntry,
+    #             #Serie
+    #             func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
+    #             #Correlativo
+    #             func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"),
+    #             DocType.c.SunatCode.label("COD_TIP_CPE"),
+    #             SalesOrder.c.DocDate.label("FEC_EMIS"),
+    #             SalesOrderSunat.c.Status.label("estado_documento")
+    #             )
+    #     .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
+    #     .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
+    #     .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
+    #     .filter(and_(SunatCodes.c.IsFinal == 2,
+    #                  SalesOrder.c.DocDate >= start_date))
+    #     .order_by(asc(SalesOrder.c.DocEntry))
+    #     )
+    
+    # returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
+
+    # for row in returned_value:
+    #     row["FEC_EMIS"] = row["FEC_EMIS"].strftime("%Y-%m-%d")
+
+
+    # result  = await sincronizar_documentos_pendientes(docList=returned_value)
+
+    # print(result)

@@ -4,6 +4,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 # from decimal import Decimal #recomendado para dinero, no pierde por redondeo
 from functions.catalogs import get_lima_date_formatted, get_lima_time_formatted
+from config.db import MIFACT_MIRUC
 import pytz
 
 
@@ -61,7 +62,7 @@ class item(BaseModel):
 class sales_order(BaseModel):
     doc_tipo: Optional[str] = "NV" #nota de venta por defecto
     emisor_nombre : Optional[str] = "MUSEO LIBRERIA GENESIS"
-    emisor_doc : Optional[str] = "10727329001"
+    emisor_doc : Optional[str] = MIFACT_MIRUC
     emisor_correo : Optional[str] = "libreriagenesiscusco@gmail.com"
     receptor_cod : Optional[str] = "C99999999"
     codigo_caja : Optional[str] = None

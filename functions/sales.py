@@ -9,9 +9,13 @@ from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPDF
 from reportlab.platypus import Flowable
 from basemodel.sales import Body_Ticket, Item_Ticket
+from service.sales import check_sales_document_status
 from decimal import Decimal
+from config.db import MIFACT_MIRUC
 import io
 import base64
+import asyncio
+import httpx
 
 
 # Registrar fuente compatible con caracteres Unicode (en caso de español)
@@ -138,7 +142,7 @@ def generar_ticket(nombre_archivo, logo_path, items, do_c):
         # 🧾 ENCABEZADO DE DOCUMENTO
         # -----------------------------------------------------
         nombre_negocio = Paragraph("MUSEO LIBRERÍA GÉNESIS", estilo_centrado_bold)
-        ruc_negocio = Paragraph("RUC: 10727329001", estilo_centrado)
+        ruc_negocio = Paragraph(f"""RUC: {MIFACT_MIRUC}""", estilo_centrado)
         elements += [nombre_negocio, ruc_negocio]
 
         # 🖼️ Logo centrado
@@ -621,3 +625,29 @@ def format_to_8digits(n: int, limit: int) -> str:
         return None
 
     return num_str.zfill(limit)
+
+
+async def sincronizar_documentos_pendientes(docList: list = []):
+    # 2. Usar un solo cliente para todas las peticiones (muy recomendado)
+    async with httpx.AsyncClient() as client:
+        returned_data = []
+        try:
+            for row in docList:
+                json_data, status_code = await check_sales_document_status(client = client, params = row)
+                if "estado_documento" in json_data and json_data.get("estado_documento", None): #verifica que el estado del json exista
+                    estado_documento = int(json_data["estado_documento"]) #convierte a entero el string del estado
+                    if row["estado_documento"] != estado_documento: #si es distinto agrega en lista
+                        returned_data.append({
+                            "DocEntry": row["DocEntry"],
+                            "Status": estado_documento
+                        })
+
+                #delay de 1 segundo entre consultas
+                await asyncio.sleep(1.0)
+
+        except Exception as e:
+            print(f"Error sincronizar_documentos_pendientes: {e}")
+
+        finally:
+            return returned_data
+

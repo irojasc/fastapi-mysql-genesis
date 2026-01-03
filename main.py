@@ -1,6 +1,7 @@
 import os
 import uvicorn
 from fastapi import FastAPI, status
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from routes.auth import auth_route
@@ -13,11 +14,16 @@ from routes.inventory import inventory_route
 from routes.authorization import authorization_route
 from routes.catalogs import catalog_route
 from routes.prices import price_route
-from routes.sales import sales_route
+from routes.sales import sales_route, sincronizacion_diaria_madrugada #ordenar las funciones
 from routes.series import series_route
+from pytz import timezone
 # from routes.requests import request_route
 
+#inicializa horario
+peru_tz = timezone("America/Lima")
+scheduler = AsyncIOScheduler(timezone=peru_tz)
 
+#inicializa api
 app = FastAPI(
     title="GENESIS API",
     swagger_ui_parameters={"defaultModelsExpandDepth": -1},
@@ -44,6 +50,14 @@ app.include_router(catalog_route) #aqui viene toda la data, monedas, unidades de
 app.include_router(price_route)
 app.include_router(sales_route)
 app.include_router(series_route)
+
+#lo primera que se ejecuta cuando se levanta el backend
+@app.on_event("startup")
+async def startup_event():
+    # Programas la función que importaste del router
+    scheduler.add_job(sincronizacion_diaria_madrugada, 'cron', hour=1, minute=0)
+    scheduler.start()
+
 
 @app.get("/", status_code=status.HTTP_200_OK, tags=['Default'])
 async def default():

@@ -24,3 +24,4 @@ CREDENTIALS_JSON = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON', default=None
 DECOLECTA_TOKEN = os.getenv('DECOLECTA_TOKEN', default=None)
 MIFACT_TOKEN = os.getenv('MIFACT_TOKEN', default=None)
 MIFACT_ENDPOINT = os.getenv('MIFACT_ENDPOINT', default=None)
+MIFACT_MIRUC = os.getenv('MIFACT_MIRUC', default=None)
