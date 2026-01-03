@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime, timezone
 # from decimal import Decimal #recomendado para dinero, no pierde por redondeo
@@ -104,6 +104,8 @@ class Body_Ticket(BaseModel):
     pay_method: Optional[str] = "" # Efectivo, Tarjeta
     doc_time: Optional[str] = "" #hora de registro
     items: List[Item_Ticket] = [] #->> 
+
+    model_config = ConfigDict(extra="allow")
 
 class Item_Ticket_Close(BaseModel):
     enum: Optional[str] = "" #agua cielo 1L

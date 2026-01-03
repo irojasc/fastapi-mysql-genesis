@@ -30,6 +30,7 @@ SalesOrder = Table("SalesOrder", meta,
                 Column("PymntGroup", Enum('CRDN','CRDS','CASH','WPHN','WMCH','TRAN', name="pymnt_group"), nullable=False, default='CASH'),
                 Column("SlpCode", String(15), nullable=True),
                 Column("CreateDate", DateTime, nullable=True),
-                Column("UpdateDate", DateTime, nullable=True)
+                Column("UpdateDate", DateTime, nullable=True),
+                Column("idWare", Integer, nullable=True),
                 )
 meta.create_all(bind=engine)

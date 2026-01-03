@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select, asc, func, insert, and_, desc, text, update, case
@@ -17,7 +18,7 @@ from sqlmodel.product import Product
 from sqlmodel.odtc import ODTC
 from sqlmodel.oafv import OAFV
 from basemodel.sales import cash_register, sales_order, Body_Ticket, Body_Ticket_Close, Item_Ticket_Close, sales_request, external_document
-from basemodel.series import series_internal
+from basemodel.series import series_internal_def
 from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close, format_to_8digits, sincronizar_documentos_pendientes
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
@@ -27,12 +28,18 @@ from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
 from service.sales import post_sales_document
+import httpx
 import json
 
 sales_route = APIRouter(
     prefix = '/sales',
     tags=['Sales']
 )
+
+
+# Esta función actúa como un "puente"
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.http_client
 
 @sales_route.post("/open_cash_register/", status_code=201)
 async def Open_Cash_Register(cash_register_body: cash_register, payload: jwt_dependecy):
@@ -547,7 +554,8 @@ async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=
         if DocEntry is not None:
 
             stmt = (
-                select(SalesOrder.c.DocNum.label("doc_num"), 
+                select( SalesOrder.c.DocType.label("doc_type"),
+                        SalesOrder.c.DocNum.label("doc_num"), 
                         SalesOrder.c.DocDate.label("doc_date"), 
                         Company.c.docName.label("card_name"), 
                         Company.c.LicTradNum.label("card_num"), 
@@ -577,6 +585,7 @@ async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=
                 body=build_body_ticket(result)
 
                 doc = {
+                    "doc_type": body.doc_type,
                     "doc_num": body.doc_num,
                     "doc_date": body.doc_date,
                     "card_name": body.card_name,
@@ -959,7 +968,7 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
         )
       
 @sales_route.post("/create_external_sales_document/", status_code=201)
-async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_internal, payload: jwt_dependecy = None):
+async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_internal_def, payload: jwt_dependecy = None, client: httpx.AsyncClient = Depends(get_http_client)):
 
     returnedValue={"message": "Error indeterminado",
                    "status_code": 422,
@@ -1102,7 +1111,6 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
                 "MNT_IGV_ITEM": str(item.VatSum),  
                 })
 
-            
             boleta_json.update(customer_f) # <- AGREGA CLIENTE
             boleta_json.update(time_f) # <- AGREGA TIEMPO
             boleta_json.update(doctype_f) # <- AGREGA TIPO DOCUMENTO
@@ -1118,9 +1126,9 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
             # print(boleta_json)
 
             #SE PROCEDE A GRABAR EL CUERPO EN MI FACT
-            json_data, status_code = await post_sales_document(params=boleta_json)
+            json_data, status_code = await post_sales_document(client=client, params=boleta_json)
 
-            print(json_data)
+            # print(json_data)
 
             #RECHAZADO POR EL PROVEEDOR 👻
             if "estado_documento" in json_data and json_data["estado_documento"] == '' and status_code == 200:
@@ -1248,7 +1256,7 @@ async def Registrar_Estado_Documento_Externo(body=external_document, payload: jw
 
 
 @sales_route.post("/create_internal_sales_document/", status_code=201)
-async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_internal, payload: jwt_dependecy = None):
+async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_internal_def, payload: jwt_dependecy = None):
 
     returnedValue={"message": "Error indeterminado",
                    "status_code": 422,
@@ -1294,7 +1302,8 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
                         PymntGroup=body.forma_pago,
                         SlpCode=payload.get("username"),
                         CreateDate=create_date["lima_bd_format"] or None,
-                        UpdateDate=None
+                        UpdateDate=None,
+                        idWare=body.id_ware
                     )
             )
             affected = session.execute(stmt)
@@ -1424,7 +1433,7 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
 
 
 @sales_route.post("/create_sales_order/", status_code=201)
-async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy):
+async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: httpx.AsyncClient = Depends(get_http_client)):
     #ABSORVE URL
     pdf_url = ""
     #PDF BYTES
@@ -1491,12 +1500,12 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy):
                     )
 
                 #CREA PREFIJO Y CORRELATIVO SIGUIENTE
-                series = series_internal(Prefix=serie["Prefix"], NextNumber=correlativo) #NextNumber en formato string
+                series = series_internal_def(Prefix=serie["Prefix"], NextNumber=correlativo) #NextNumber en formato string
 
                 #CREA DOCUMENTO NUBEFACT
                 if body.doc_tipo in ('FAC', 'BOL'):
 
-                    response =  await Crear_Documento_Externo_De_Venta(body=body, series=series, payload=payload) #creacion externa
+                    response =  await Crear_Documento_Externo_De_Venta(client=client, body=body, series=series, payload=payload) #creacion externa
                     status_code_doc = response.get("status_code", 422)
                     msg = response.get("message", "Error on Sales Route Line 1390")
                     data = response.get("data", {})
@@ -1723,38 +1732,54 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
     
     
 @sales_route.post("/sincronizar_documentos/", status_code=201)
-async def sincronizacion_diaria_madrugada():
-    print("Inicia sincronizacion a la 1 am ....... correcto!")
+async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient = Depends(get_http_client)):
 
-    # #solo se va considerar dos dias de antiguedad
-    # today_server = await Get_Time() #<-- obtiene hora
-    # today = dt.strptime(today_server["lima_transfer_format"], "%Y-%m-%d")
-    # start_date = today - timedelta(days=2)  # TOMA LOS DOS DIAS ANTERIORES
+    #solo se va considerar dos dias de antiguedad
+    today_server = await Get_Time() #<-- obtiene hora
+    today = dt.strptime(today_server["lima_transfer_format"], "%Y-%m-%d")
+    start_date = today - timedelta(days=2)  # TOMA LOS DOS DIAS ANTERIORES
 
-    # stmt = (select( 
-    #             SalesOrder.c.DocEntry,
-    #             #Serie
-    #             func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
-    #             #Correlativo
-    #             func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"),
-    #             DocType.c.SunatCode.label("COD_TIP_CPE"),
-    #             SalesOrder.c.DocDate.label("FEC_EMIS"),
-    #             SalesOrderSunat.c.Status.label("estado_documento")
-    #             )
-    #     .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
-    #     .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
-    #     .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
-    #     .filter(and_(SunatCodes.c.IsFinal == 2,
-    #                  SalesOrder.c.DocDate >= start_date))
-    #     .order_by(asc(SalesOrder.c.DocEntry))
-    #     )
+    stmt = (select( 
+                SalesOrder.c.DocEntry,
+                #Serie
+                func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
+                #Correlativo
+                func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"),
+                DocType.c.SunatCode.label("COD_TIP_CPE"),
+                SalesOrder.c.DocDate.label("FEC_EMIS"),
+                SalesOrderSunat.c.Status.label("estado_documento")
+                )
+        .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
+        .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
+        .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
+        .filter(and_(SunatCodes.c.IsFinal == 2,
+                     SalesOrder.c.DocDate >= start_date))
+        .order_by(asc(SalesOrder.c.DocEntry))
+        )
     
-    # returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
+    returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
 
-    # for row in returned_value:
-    #     row["FEC_EMIS"] = row["FEC_EMIS"].strftime("%Y-%m-%d")
+    for row in returned_value:
+        row["FEC_EMIS"] = row["FEC_EMIS"].strftime("%Y-%m-%d")
 
 
-    # result  = await sincronizar_documentos_pendientes(docList=returned_value)
+    result  = await sincronizar_documentos_pendientes(client= client, docList=returned_value, time=today_server["lima_bd_format"])
 
-    # print(result)
+    len_cambios =  len(result) if isinstance(result, list) else None
+    if len_cambios:
+        stmt = text(f"UPDATE salesordersunat set Status = :Status, UpdateDate = :UpdateDate where DocEntry = :DocEntry")
+        
+        response = session.execute(stmt, result)
+
+        if response.rowcount > 0:
+            session.commit()
+            session.close()
+            print(f"Se efectuaron {len_cambios} cambios durante sincronización...")
+        else:
+            session.close()
+            print("No se efectuaron cambios durante sincronización...")
+
+    else:
+        print("No se efectuaron cambios durante sincronización...")
+
+

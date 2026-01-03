@@ -7,7 +7,7 @@ class series_request(BaseModel):
     WareID: Optional[int] = None #obligatorio
     SerieType: Optional[str] = None #obligatorio
 
-class series_internal(BaseModel):
+class series_internal_def(BaseModel):
     Prefix: Optional[str] = None #obligatorio # prefijo
     NextNumber: Optional[str] = None #obligatorio #ejemplo: 00000001
 

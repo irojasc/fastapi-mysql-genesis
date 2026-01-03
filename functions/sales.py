@@ -606,6 +606,8 @@ def build_body_ticket(data: list[dict]) -> Body_Ticket:
         ]
     )
 
+    body.doc_type = str(first.get("doc_type", None))
+
     return body
 
 
@@ -627,27 +629,27 @@ def format_to_8digits(n: int, limit: int) -> str:
     return num_str.zfill(limit)
 
 
-async def sincronizar_documentos_pendientes(docList: list = []):
-    # 2. Usar un solo cliente para todas las peticiones (muy recomendado)
-    async with httpx.AsyncClient() as client:
-        returned_data = []
-        try:
-            for row in docList:
-                json_data, status_code = await check_sales_document_status(client = client, params = row)
-                if "estado_documento" in json_data and json_data.get("estado_documento", None): #verifica que el estado del json exista
-                    estado_documento = int(json_data["estado_documento"]) #convierte a entero el string del estado
-                    if row["estado_documento"] != estado_documento: #si es distinto agrega en lista
-                        returned_data.append({
-                            "DocEntry": row["DocEntry"],
-                            "Status": estado_documento
-                        })
+async def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, docList: list = [], time:str=None):
+    
+    returned_data = []
+    try:
+        for row in docList:
+            json_data, status_code = await check_sales_document_status(client = client, params = row)
+            if "estado_documento" in json_data and json_data.get("estado_documento", None): #verifica que el estado del json exista
+                estado_documento = int(json_data["estado_documento"]) #convierte a entero el string del estado
+                if row["estado_documento"] != estado_documento: #si es distinto agrega en lista
+                    returned_data.append({
+                        "DocEntry": row["DocEntry"],
+                        "Status": estado_documento,
+                        "UpdateDate": time
+                    })
 
-                #delay de 1 segundo entre consultas
-                await asyncio.sleep(1.0)
+            #delay de 1 segundo entre consultas
+            await asyncio.sleep(1.0)
 
-        except Exception as e:
-            print(f"Error sincronizar_documentos_pendientes: {e}")
+    except Exception as e:
+        print(f"Error sincronizar_documentos_pendientes: {e}")
 
-        finally:
-            return returned_data
+    finally:
+        return returned_data
 

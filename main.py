@@ -17,6 +17,7 @@ from routes.prices import price_route
 from routes.sales import sales_route, sincronizacion_diaria_madrugada #ordenar las funciones
 from routes.series import series_route
 from pytz import timezone
+import httpx
 # from routes.requests import request_route
 
 #inicializa horario
@@ -51,12 +52,19 @@ app.include_router(price_route)
 app.include_router(sales_route)
 app.include_router(series_route)
 
+
 #lo primera que se ejecuta cuando se levanta el backend
 @app.on_event("startup")
 async def startup_event():
+    # Crea un solo cliente para conectarse con servidor MIFACT - FALTA (DECOLECTA) 🎃
+    app.state.http_client = httpx.AsyncClient()
     # Programas la función que importaste del router
     scheduler.add_job(sincronizacion_diaria_madrugada, 'cron', hour=1, minute=0)
     scheduler.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await app.state.http_client.aclose()
 
 
 @app.get("/", status_code=status.HTTP_200_OK, tags=['Default'])
