@@ -18,7 +18,6 @@ from routes.sales import sales_route, sincronizacion_diaria_madrugada #ordenar l
 from routes.series import series_route
 from pytz import timezone
 import httpx
-# from routes.requests import request_route
 
 #inicializa horario
 peru_tz = timezone("America/Lima")
@@ -59,7 +58,13 @@ async def startup_event():
     # Crea un solo cliente para conectarse con servidor MIFACT - FALTA (DECOLECTA) 🎃
     app.state.http_client = httpx.AsyncClient()
     # Programas la función que importaste del router
-    scheduler.add_job(sincronizacion_diaria_madrugada, 'cron', hour=1, minute=0)
+    scheduler.add_job(
+            sincronizacion_diaria_madrugada, 
+            'cron', 
+            hour=1, 
+            minute=0,
+            args=[app.state.http_client]
+            )
     scheduler.start()
 
 @app.on_event("shutdown")

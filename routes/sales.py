@@ -1732,7 +1732,7 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
     
     
 # @sales_route.post("/sincronizar_documentos/", status_code=201)
-async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient = Depends(get_http_client)):
+async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
 
     #solo se va considerar dos dias de antiguedad
     today_server = await Get_Time() #<-- obtiene hora

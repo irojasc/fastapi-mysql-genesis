@@ -1,7 +1,6 @@
 from config.db import MIFACT_TOKEN, MIFACT_ENDPOINT, MIFACT_MIRUC
 import httpx
 # import json
-# import requests
 
 # params: cuerpo solicitado por mifact
 async def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):

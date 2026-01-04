@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from fastapi import Request
 from fastapi.responses import JSONResponse
 # from sqlalchemy import select, insert, delete, asc, func
 from sqlalchemy import select, asc, func, insert, and_, or_, update
@@ -19,12 +20,16 @@ from service.company import get_partner_by_ruc_dni # consume servicio de reniec 
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
 from datetime import datetime
+import httpx
 import json
 
 company_route = APIRouter(
     prefix = '/company',
     tags=['Company']
 )
+
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.http_client
 
 @company_route.get("/business_partner/", status_code=200)
 async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jwt_dependecy = None):
@@ -389,7 +394,7 @@ async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None, 
         return returned
 
 @company_route.get("/get_partner_data_from_sunat_reniec/", status_code=200)
-async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', jwt_dependency: jwt_dependecy = None):
+async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', jwt_dependency: jwt_dependecy = None, client: httpx.AsyncClient = Depends(get_http_client)):
     """IMPORTANTE, ༼ つ ◕_◕ ༽つ DEBE SER EL MISMO FORMATO SI CAMBIA DE PROVEEDOR VVVV \n
     CUANDO NO EXISTE UBIGEO, RETORNA '-'
     """
@@ -401,7 +406,7 @@ async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
         params = {
             "numero": nDocument
         }
-        response, status_code = await get_partner_by_ruc_dni(params=params, tdocument=tDocument)
+        response, status_code = await get_partner_by_ruc_dni(client=client, params=params, tdocument=tDocument)
         
         if 'ubigeo' in response: #realiza consulta a backend genesis
             result = session.query(Ubigeo.c.dep_name, Ubigeo.c.pro_name, Ubigeo.c.dis_name). \
