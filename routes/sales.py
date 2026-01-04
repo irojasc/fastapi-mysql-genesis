@@ -1767,7 +1767,7 @@ async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
 
     len_cambios =  len(result) if isinstance(result, list) else None
     if len_cambios:
-        stmt = text(f"UPDATE salesordersunat set Status = :Status, UpdateDate = :UpdateDate where DocEntry = :DocEntry")
+        stmt = text(f"UPDATE SalesOrderSunat set Status = :Status, UpdateDate = :UpdateDate where DocEntry = :DocEntry")
         
         response = session.execute(stmt, result)
 
