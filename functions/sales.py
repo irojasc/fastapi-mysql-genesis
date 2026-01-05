@@ -633,19 +633,28 @@ async def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, do
     
     returned_data = []
     try:
-        for row in docList:
-            json_data, status_code = await check_sales_document_status(client = client, params = row)
-            if "estado_documento" in json_data and json_data.get("estado_documento", None): #verifica que el estado del json exista
-                estado_documento = int(json_data["estado_documento"]) #convierte a entero el string del estado
-                if row["estado_documento"] != estado_documento: #si es distinto agrega en lista
-                    returned_data.append({
-                        "DocEntry": row["DocEntry"],
-                        "Status": estado_documento,
-                        "UpdateDate": time
-                    })
+        for index, row in enumerate(docList):
+            try:
+                json_data, status_code = await check_sales_document_status(client = client, params = row)
 
-            #delay de 1 segundo entre consultas
-            await asyncio.sleep(1.0)
+                if status_code == 429:
+                    print("¡Límite alcanzado! Abortando para intentar en el siguiente turno.")
+                    break # Sale del bucle actual para esperar al próximo job (3 o 4 AM)
+
+                if "estado_documento" in json_data and json_data.get("estado_documento", None): #verifica que el estado del json exista
+                    estado_documento = int(json_data["estado_documento"]) #convierte a entero el string del estado
+                    if row["estado_documento"] != estado_documento: #si es distinto agrega en lista
+                        returned_data.append({
+                            "DocEntry": row["DocEntry"],
+                            "Status": estado_documento,
+                            "UpdateDate": time
+                        })
+
+                #delay de 3 segundos entre consultas para evitar bloqueo
+                await asyncio.sleep(3.0)
+
+            except Exception as e:
+                print(f"Error procesando documento numero {index}: {e}")
 
     except Exception as e:
         print(f"Error sincronizar_documentos_pendientes: {e}")

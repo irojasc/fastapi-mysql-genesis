@@ -57,14 +57,16 @@ app.include_router(series_route)
 async def startup_event():
     # Crea un solo cliente para conectarse con servidor MIFACT - FALTA (DECOLECTA) 🎃
     app.state.http_client = httpx.AsyncClient()
-    # Programas la función que importaste del router
-    scheduler.add_job(
-            sincronizacion_diaria_madrugada, 
-            'cron', 
-            hour=12, 
-            minute=0,
-            args=[app.state.http_client]
-            )
+    
+    # Configura el job para tres horarios distintos []
+    for hora in [2, 4]:
+        scheduler.add_job(
+                sincronizacion_diaria_madrugada,
+                'cron', 
+                hour=hora, 
+                minute=0,
+                args=[app.state.http_client]
+                )
     scheduler.start()
 
 @app.on_event("shutdown")
