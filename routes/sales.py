@@ -17,7 +17,9 @@ from sqlmodel.pymntgroup import PymntGroup
 from sqlmodel.product import Product
 from sqlmodel.odtc import ODTC
 from sqlmodel.oafv import OAFV
-from basemodel.sales import cash_register, sales_order, Body_Ticket, Body_Ticket_Close, Item_Ticket_Close, sales_request, external_document
+from basemodel.sales import (cash_register, sales_order, Body_Ticket, 
+Body_Ticket_Close, Item_Ticket_Close, sales_request, 
+external_document, sales_order_for_cancel)
 from basemodel.series import series_internal_def
 from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close, format_to_8digits, sincronizar_documentos_pendientes
 from utils.validate_jwt import jwt_dependecy
@@ -1644,6 +1646,105 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
         )
     finally:
         session.close()
+
+
+    
+
+@sales_route.post("/cancel_sales_order/", status_code=200)
+async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_dependecy):
+    #solo el que crea puede eliminar, o tambien el que tiene privilegios de eliminar
+
+    status_code = 422
+    msg = ""
+
+    try:
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
+        solo_usuario = isinstance(permisos, list) and 'SLS_CSO' in permisos #VERIFICA PERMISO PARA CANCELAR VENTA PROPIA DEL USUARIO
+        todas_ventas = isinstance(permisos, list) and 'SLS_TSO' in permisos #VERIFICA PERMISO PARA CANCELAR CUAQUIER VENTA
+        
+        if solo_usuario or todas_ventas:
+            ##HORA DE REGISTRO
+            create_date = await Get_Time()
+
+            #1 paso intermedio si boleta cambia estado en tabla sunat siempre y cuando mifact autorice
+            #verificar si nota de venta o boleta
+
+            result = session.execute(select(SalesOrder.c.DocType).filter(SalesOrder.c.DocEntry == int(body.doc_entry))).mappings().first()
+            order = session.execute(select(SalesOrder.c.DocStatus).filter(SalesOrder.c.DocEntry == int(body.doc_entry))).scalar_one_or_none()
+            
+            if result and order != 'A':
+                if result["DocType"] == "NV":
+                    mifact_auth = True
+                else:
+                    mifact_auth = False
+
+                if mifact_auth: #autoriza paso de mifact
+
+                    where_clause = SalesOrder.c.DocEntry == int(body.doc_entry)
+
+                    if todas_ventas:
+                        pass
+
+                    elif solo_usuario and not(todas_ventas):
+                        where_clause = and_(where_clause, 
+                                            SalesOrder.c.SlpCode == payload.get("username")
+                                            )
+
+                    #2 cambia el estado
+                    stmt = (update(SalesOrder)
+                            .where(where_clause)
+                            .values(
+                                DocStatus='A',
+                                UpdateDate= create_date["lima_bd_format"] or None
+                                )
+                            )
+                    # Ejecutar la instrucción de actualización
+                    result = session.execute(stmt)
+
+                    if result.rowcount > 0:
+                        #3 segundo actualizamos las cantidades
+                        session.commit()
+                        session.close()
+
+                        status_code =  200
+                        msg = "Venta anulada con exito!"
+
+                    else:
+                        status_code =  422
+                        msg = "No se realizaron cambios o no cuenta con permisos"
+                        session.close()
+
+            elif order == 'A':
+                status_code = 200
+                msg = "La venta ya fue anulada anteriormente!"
+
+        else:
+            status_code = 422
+            msg = "No cuenta con permisos para anular ventas"
+
+        
+        return JSONResponse(
+        status_code= status_code,
+        content= {
+                "data": None,
+                "message": msg,
+            }
+        )
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return JSONResponse(
+        status_code= status_code,
+        content= {
+                "data": None,
+                "message": f"An error occurred: {e}",
+            }
+        )
+    finally:
+        session.close()
+
+
+
 
 @sales_route.post("/create_ticket_pdf/", status_code=201)
 async def Crear_Ticket_PDF(body:Body_Ticket, payload: jwt_dependecy):

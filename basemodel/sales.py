@@ -58,6 +58,9 @@ class item(BaseModel):
     dsct_user_total_no_igv: str
     VatSum: str #solo igv
     
+class sales_order_for_cancel(BaseModel):
+    doc_entry: Optional[str] = None
+    doc_dscp: Optional[str] = None
 
 class sales_order(BaseModel):
     doc_tipo: Optional[str] = "NV" #nota de venta por defecto
