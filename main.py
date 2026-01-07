@@ -59,12 +59,12 @@ async def startup_event():
     app.state.http_client = httpx.AsyncClient()
     
     # Configura el job para tres horarios distintos []
-    for hora in [4, 5]:
+    for hora in [5, 6]:
         scheduler.add_job(
                 sincronizacion_diaria_madrugada,
                 'cron', 
                 hour=hora, 
-                minute=45,
+                minute=15,
                 args=[app.state.http_client]
                 )
     scheduler.start()
