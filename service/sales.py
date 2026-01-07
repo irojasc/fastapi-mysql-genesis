@@ -51,3 +51,19 @@ async def check_sales_document_status(client: httpx.AsyncClient, params: dict = 
     except Exception as e:
         print(f'Error at check_sales_document_status: {e}')
         return {"msg": str(e)}, 422
+
+# cancela / anula documento
+async def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
+    if not params:
+        return None, 422
+    
+    payload = {**params, "TOKEN": MIFACT_TOKEN, "NUM_NIF_EMIS": MIFACT_MIRUC, "COD_TIP_NIF_EMIS": "6"}
+    endpoint = f"{MIFACT_ENDPOINT}LowInvoice"
+
+    try:
+        # Aquí usamos el cliente asíncrono que pasamos por parámetro
+        response = await client.post(endpoint, json=payload, timeout=30.0)
+        return response.json(), response.status_code
+    except Exception as e:
+        print(f'Error at cancel_sales_document: {e}')
+        return {}, 422

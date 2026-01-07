@@ -29,7 +29,7 @@ from config.db import con, session, MIFACT_MIRUC
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
-from service.sales import post_sales_document
+from service.sales import post_sales_document, cancel_sales_document
 import httpx
 import json
 
@@ -125,7 +125,8 @@ async def Get_Sales_Order_By_CashRegisterCode(cash_register_body: cash_register 
     returned_value = []
     try:
 
-        stmt = (select( SalesOrder.c.DocEntry,
+        stmt = (select( SalesOrder.c.DocStatus,
+                        SalesOrder.c.DocEntry,
                         SalesOrder.c.DocNum,
                         DocType.c.DocTypeCode.label("DocType"),
                         SalesOrder.c.DocDate,
@@ -147,7 +148,13 @@ async def Get_Sales_Order_By_CashRegisterCode(cash_register_body: cash_register 
 
         returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
 
+        #aqui se hace el artificio para nota de venta
+        
         for item in returned_value:
+            if item["DocType"] == 'NV' and item["DocStatus"] == 'A':
+                item["Status_level"] = 3
+                item["Status"] = "Anulado"
+
             item["DocDate"] = item["DocDate"].strftime("%d/%m %H:%M")
         
     except Exception as e:
@@ -238,14 +245,12 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                 # --- 1) Calcular totales por tipo de pago ---
                 totales = defaultdict(Decimal)
 
-                for v in ventas:
-                    totales[v["TipoPago"]] += v["DocTotal"]
+                # for v in ventas:
 
-                # Convertir Decimal → string para JSON seguro
-                cabecera = {tipo: format(total, "f") for tipo, total in totales.items()}
 
                 # --- 2) Preparar detalle con conversiones seguras ---
                 detalle = []
+
                 for v in ventas:
                     item = v.copy()
                     item["DocTotal"] = format(item["DocTotal"], "f")  # Decimal → string
@@ -256,7 +261,18 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                     # convertir CODETS a hex36
                     item["CodeTS"] = "" if item["CodeTS"] is None else to_base36(item["CodeTS"])
 
+                    # convertir anulacion cuando es nota de venta, modificar parametros 🎃🎃 WOOOOO
+                    if item["DocType"] == "NV" and item["DocStatus"] == 'A': #ARTIFICIO PARA NOTA DE VENTA TENGA ESTADO
+                        item["Status"] = "Anulado"
+                        item["Status_level"] = 3
+
+                    totales[v["TipoPago"]] +=  0 if item["DocStatus"] == 'A' else v["DocTotal"] # filtra solo que estan en proceso o aprobados
+
                     detalle.append(item)
+                
+                # Convertir Decimal → string para JSON seguro
+                cabecera = {tipo: format(total, "f") for tipo, total in totales.items()}
+
 
                 # --- 3) Armar diccionario final ---
                 return {
@@ -276,7 +292,8 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                             SalesOrder.c.DocCur.label("Moneda"),
                             PymntGroup.c.PymntGroupName.label("TipoPago"),
                             SunatCodes.c.Dscp.label("Status"), #valor por defecto "" cuando sea null
-                            SunatCodes.c.IsFinal.label("Status_level")
+                            SunatCodes.c.IsFinal.label("Status_level"),
+                            SalesOrder.c.DocStatus
                         )
                     .join(Company, SalesOrder.c.CardCode == Company.c.cardCode)
                     .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
@@ -430,6 +447,7 @@ async def Get_Detail_Sales_Order(cash_register_body: sales_request = Depends(), 
                 }
 
             stmt = (select( 
+                            SalesOrder.c.DocStatus,
                             SalesOrder.c.DocEntry,
                             SalesOrder.c.CashBoxTS.label("CodeTS"),
                             SalesOrder.c.DocNum,
@@ -450,7 +468,8 @@ async def Get_Detail_Sales_Order(cash_register_body: sales_request = Depends(), 
                         SalesOrder.c.DocDate >= start_date,
                         SalesOrder.c.DocDate < end_date,
                         CashRegister.c.WareID == cash_register_body.WareID,
-                        Product.c.idItem == cash_register_body.IdItem
+                        Product.c.idItem == cash_register_body.IdItem,
+                        SalesOrder.c.DocStatus == 'C' #solo se va mostrar lo que esta cerrado x el momento
                     )
                     .order_by(desc(SalesOrder.c.DocDate))
                     )
@@ -556,7 +575,9 @@ async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=
         if DocEntry is not None:
 
             stmt = (
-                select( SalesOrder.c.DocType.label("doc_type"),
+                select( 
+                        SalesOrder.c.DocStatus.label("doc_status"),
+                        SalesOrder.c.DocType.label("doc_type"),
                         SalesOrder.c.DocNum.label("doc_num"), 
                         SalesOrder.c.DocDate.label("doc_date"), 
                         Company.c.docName.label("card_name"), 
@@ -587,6 +608,7 @@ async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=
                 body=build_body_ticket(result)
 
                 doc = {
+                    "doc_status": body.doc_status,
                     "doc_type": body.doc_type,
                     "doc_num": body.doc_num,
                     "doc_date": body.doc_date,
@@ -1651,7 +1673,7 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
     
 
 @sales_route.post("/cancel_sales_order/", status_code=200)
-async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_dependecy):
+async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_dependecy, client: httpx.AsyncClient = Depends(get_http_client)):
     #solo el que crea puede eliminar, o tambien el que tiene privilegios de eliminar
 
     status_code = 422
@@ -1663,60 +1685,154 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
         todas_ventas = isinstance(permisos, list) and 'SLS_TSO' in permisos #VERIFICA PERMISO PARA CANCELAR CUAQUIER VENTA
         
         if solo_usuario or todas_ventas:
+
+            #Defini funcion para comparar fechas
+            def valida_max_dias(fecha_emision: dt, fecha_hoy: str) -> bool:
+                fecha_actual = dt.strptime(fecha_hoy, "%Y-%m-%d").date()
+                fecha_ant = fecha_emision.date()
+
+                return (fecha_actual - fecha_ant).days <= 1 #<- permite como maximo un dia de antiguedad
+
             ##HORA DE REGISTRO
             create_date = await Get_Time()
 
             #1 paso intermedio si boleta cambia estado en tabla sunat siempre y cuando mifact autorice
             #verificar si nota de venta o boleta
 
-            result = session.execute(select(SalesOrder.c.DocType).filter(SalesOrder.c.DocEntry == int(body.doc_entry))).mappings().first()
+            #obtine datos de la orden de venta
+            result = session.execute(   select( SalesOrder.c.DocType, 
+                                                SalesOrder.c.DocDate,
+                                                DocType.c.SunatCode,
+                                                #serie
+                                                func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
+                                                #Correlativo
+                                                func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE")
+                                                )
+                                        .outerjoin(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
+                                        .filter(SalesOrder.c.DocEntry == int(body.doc_entry))).mappings().first()
+            
+            #obtiene estado de salesorder para verificas si ya esta cerrado
             order = session.execute(select(SalesOrder.c.DocStatus).filter(SalesOrder.c.DocEntry == int(body.doc_entry))).scalar_one_or_none()
             
-            if result and order != 'A':
-                if result["DocType"] == "NV":
-                    mifact_auth = True
-                else:
-                    mifact_auth = False
+            if valida_max_dias(fecha_emision= result["DocDate"], fecha_hoy= create_date["lima_transfer_format"]):
+            
+                if result and order != 'A':
+                    if result["DocType"] == "NV":
+                        mifact_auth = True
+                    elif result["DocType"] in ("BOL", "FAC"):
 
-                if mifact_auth: #autoriza paso de mifact
+                        params = {  
+                                    "FEC_EMIS": result["DocDate"].strftime("%Y-%m-%d"),
+                                    "COD_TIP_CPE": result["SunatCode"],
+                                    "NUM_SERIE_CPE": result["NUM_SERIE_CPE"],
+                                    "NUM_CORRE_CPE": result["NUM_CORRE_CPE"],  
+                                    "TXT_DESC_MTVO": body.doc_dscp.upper() or "", 
+                                    "COD_PTO_VENTA": payload.get("username")
+                                  }
+                        
+                        json_data, status_code = await cancel_sales_document(client=client, params=params)
+                        print(json_data)
+                        print(status_code)
 
-                    where_clause = SalesOrder.c.DocEntry == int(body.doc_entry)
+                        #108: solicitud de baja pendiente
+                        #105: anulado
 
-                    if todas_ventas:
-                        pass
+                        estado_documento = json_data["estado_documento"] if "estado_documento" in json_data else None
+                        
+                        if estado_documento and json_data["estado_documento"] in ["108", "105"]:
+                            # Actualiza campo
+                            stmt = (update(SalesOrderSunat)
+                                    .where(SalesOrderSunat.c.DocEntry == int(body.doc_entry))
+                                    .values(
+                                        Status= int(estado_documento),
+                                        CancelDate= create_date["lima_bd_format"] or None,
+                                        UpdateDate= create_date["lima_bd_format"] or None
+                                        )
+                                    )
+                            # Ejecutar la instrucción de actualización
+                            result = session.execute(stmt)
 
-                    elif solo_usuario and not(todas_ventas):
-                        where_clause = and_(where_clause, 
-                                            SalesOrder.c.SlpCode == payload.get("username")
-                                            )
-
-                    #2 cambia el estado
-                    stmt = (update(SalesOrder)
-                            .where(where_clause)
-                            .values(
-                                DocStatus='A',
-                                UpdateDate= create_date["lima_bd_format"] or None
-                                )
-                            )
-                    # Ejecutar la instrucción de actualización
-                    result = session.execute(stmt)
-
-                    if result.rowcount > 0:
-                        #3 segundo actualizamos las cantidades
-                        session.commit()
-                        session.close()
-
-                        status_code =  200
-                        msg = "Venta anulada con exito!"
-
+                            if result.rowcount > 0:
+                                session.commit()
+                                session.close()
+                                mifact_auth = True
+                            else:
+                                session.close()
+                                mifact_auth = False
+                                msg = "No actualizar el estado sunat del sistema interno, revisar! "
+                            
+                        else:
+                            msg = "Error durante proceso de anulacion, desde proveedor"
+                            status_code = 422
+                            mifact_auth = False
                     else:
-                        status_code =  422
-                        msg = "No se realizaron cambios o no cuenta con permisos"
-                        session.close()
+                        mifact_auth = False
 
-            elif order == 'A':
-                status_code = 200
-                msg = "La venta ya fue anulada anteriormente!"
+
+
+                    if mifact_auth: #autoriza paso de mifact
+
+                        where_clause = SalesOrder.c.DocEntry == int(body.doc_entry)
+
+                        if todas_ventas:
+                            pass
+
+                        elif solo_usuario and not(todas_ventas):
+                            where_clause = and_(where_clause, 
+                                                SalesOrder.c.SlpCode == payload.get("username")
+                                                )
+
+                        #2 cambia el estado
+                        stmt = (update(SalesOrder)
+                                .where(where_clause)
+                                .values(
+                                    DocStatus='A',
+                                    UpdateDate= create_date["lima_bd_format"] or None
+                                    )
+                                )
+                        # Ejecutar la instrucción de actualización
+                        result = session.execute(stmt)
+
+                        if result.rowcount > 0:
+                            #3 segundo actualizamos las cantidades
+                            #3.1 | obtenemos las cantidades para retornar
+                            stmt = (select(
+                                            SalesOrderDetail.c.idProduct.label("idPro"),
+                                            SalesOrderDetail.c.Quantity.label("qtyN"),
+                                            SalesOrderDetail.c.idWare.label("idWa")
+                                        ).
+                                    filter(SalesOrderDetail.c.DocEntry == int(body.doc_entry))
+                                    )
+                            params = [{**dict(r), "editDa": create_date["lima_bd_format"]} for r in session.execute(stmt).mappings().all()]
+
+                            #3.2 | actualiza cantidades
+                            stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
+
+                            result = session.execute(stmt, params)
+
+                            if result.rowcount > 0:
+                                session.commit()
+                                session.close()
+                                status_code =  200
+                                msg = "Venta anulada con exito!"
+
+                            else:
+                                session.close()
+                                status_code =  422
+                                msg = "Cambio estado, pero no reintegro cantidades hacia el almacen de origen"
+
+                        else:
+                            status_code =  422
+                            msg = "No se realizaron cambios o no cuenta con permisos"
+                            session.close()
+
+                elif order == 'A':
+                    status_code = 200
+                    msg = "La venta ya fue anulada anteriormente!"
+
+            else:
+                status_code = 422
+                msg = "No puede anular un documento con mas de 1 dia de anterioridad"
 
         else:
             status_code = 422

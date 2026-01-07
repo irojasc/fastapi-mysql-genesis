@@ -607,6 +607,7 @@ def build_body_ticket(data: list[dict]) -> Body_Ticket:
     )
 
     body.doc_type = str(first.get("doc_type", None))
+    body.doc_status = str(first.get("doc_status", None))
 
     return body
 

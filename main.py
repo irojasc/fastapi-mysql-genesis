@@ -64,7 +64,7 @@ async def startup_event():
                 sincronizacion_diaria_madrugada,
                 'cron', 
                 hour=hora, 
-                minute=30,
+                minute=45,
                 args=[app.state.http_client]
                 )
     scheduler.start()
