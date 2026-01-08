@@ -715,7 +715,8 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                 )
                 .where(
                     SalesOrderDetail.c.idProduct == CashRegister.c.Item2Code,
-                    SalesOrder.c.CashBoxTS == CashRegister.c.CodeTS
+                    SalesOrder.c.CashBoxTS == CashRegister.c.CodeTS,
+                    SalesOrder.c.DocStatus == 'C' #<- agrega que tiene que estar cerrado la venta para sumar estampillas 👻
                 )
                 .correlate(CashRegister)
                 .scalar_subquery()
@@ -733,7 +734,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                         (
                             func.coalesce(func.sum(
                                     case(
-                                        (SalesOrder.c.PymntGroup == 'CASH', SalesOrder.c.DocTotal), #solo efectivo
+                                        (and_(SalesOrder.c.PymntGroup == 'CASH', SalesOrder.c.DocStatus == 'C'), SalesOrder.c.DocTotal), #solo efectivo y estado cerrado 👻s
                                         else_=0
                                         )
                                 ),
@@ -743,7 +744,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                         (
                             func.coalesce(func.sum(
                                     case(
-                                        (SalesOrder.c.PymntGroup == 'CRDN', SalesOrder.c.DocTotal), #solo tarjeta
+                                        (and_(SalesOrder.c.PymntGroup == 'CRDN', SalesOrder.c.DocStatus == 'C'), SalesOrder.c.DocTotal), #solo tarjeta y estado cerrado
                                         else_=0
                                         )
                                 ),
@@ -753,7 +754,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                         (
                             func.coalesce(func.sum(
                                     case(
-                                        (SalesOrder.c.PymntGroup == 'TRAN', SalesOrder.c.DocTotal), #solo transferencia
+                                        (and_(SalesOrder.c.PymntGroup == 'TRAN', SalesOrder.c.DocStatus == 'C'), SalesOrder.c.DocTotal), #solo transferencia y estado cerrado
                                         else_=0
                                         )
                                 ),
@@ -763,7 +764,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                         (
                             func.coalesce(func.sum(
                                     case(
-                                        (SalesOrder.c.PymntGroup == 'WMCH', SalesOrder.c.DocTotal), #solo billera maquina
+                                        (and_(SalesOrder.c.PymntGroup == 'WMCH', SalesOrder.c.DocStatus == 'C'), SalesOrder.c.DocTotal), #solo billera maquina y estado cerrado
                                         else_=0
                                         )
                                 ),
@@ -773,7 +774,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                         (
                             func.coalesce(func.sum(
                                     case(
-                                        (SalesOrder.c.PymntGroup == 'WPHN', SalesOrder.c.DocTotal), #solo billera celular
+                                        (and_(SalesOrder.c.PymntGroup == 'WPHN', SalesOrder.c.DocStatus == 'C'), SalesOrder.c.DocTotal), #solo billera celular y estado cerrado
                                         else_=0
                                         )
                                 ),
@@ -1678,6 +1679,10 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
 
     status_code = 422
     msg = ""
+    data = {
+        "Status": None,
+        "Status_level": None
+    }
 
     try:
         permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
@@ -1700,7 +1705,7 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
             #verificar si nota de venta o boleta
 
             #obtine datos de la orden de venta
-            result = session.execute(   select( SalesOrder.c.DocType, 
+            result_sale = session.execute(   select( SalesOrder.c.DocType, 
                                                 SalesOrder.c.DocDate,
                                                 DocType.c.SunatCode,
                                                 #serie
@@ -1714,25 +1719,23 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
             #obtiene estado de salesorder para verificas si ya esta cerrado
             order = session.execute(select(SalesOrder.c.DocStatus).filter(SalesOrder.c.DocEntry == int(body.doc_entry))).scalar_one_or_none()
             
-            if valida_max_dias(fecha_emision= result["DocDate"], fecha_hoy= create_date["lima_transfer_format"]):
+            if valida_max_dias(fecha_emision= result_sale["DocDate"], fecha_hoy= create_date["lima_transfer_format"]):
             
-                if result and order != 'A':
-                    if result["DocType"] == "NV":
+                if result_sale and order != 'A':
+                    if result_sale["DocType"] == "NV":
                         mifact_auth = True
-                    elif result["DocType"] in ("BOL", "FAC"):
+                    elif result_sale["DocType"] in ("BOL", "FAC"):
 
                         params = {  
-                                    "FEC_EMIS": result["DocDate"].strftime("%Y-%m-%d"),
-                                    "COD_TIP_CPE": result["SunatCode"],
-                                    "NUM_SERIE_CPE": result["NUM_SERIE_CPE"],
-                                    "NUM_CORRE_CPE": result["NUM_CORRE_CPE"],  
+                                    "FEC_EMIS": result_sale["DocDate"].strftime("%Y-%m-%d"),
+                                    "COD_TIP_CPE": result_sale["SunatCode"],
+                                    "NUM_SERIE_CPE": result_sale["NUM_SERIE_CPE"],
+                                    "NUM_CORRE_CPE": result_sale["NUM_CORRE_CPE"],  
                                     "TXT_DESC_MTVO": body.doc_dscp.upper() or "", 
                                     "COD_PTO_VENTA": payload.get("username")
                                   }
                         
                         json_data, status_code = await cancel_sales_document(client=client, params=params)
-                        print(json_data)
-                        print(status_code)
 
                         #108: solicitud de baja pendiente
                         #105: anulado
@@ -1813,8 +1816,28 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
                             if result.rowcount > 0:
                                 session.commit()
                                 session.close()
+
                                 status_code =  200
                                 msg = "Venta anulada con exito!"
+
+                                if result_sale["DocType"] == 'NV':
+                                    data.update(
+                                        {
+                                        "Status": 'Anulado',
+                                        "Status_level": 3}
+                                    )
+                                
+                                elif result_sale["DocType"] in ('BOL', 'FAC'):
+                                    result_final = session.execute(
+                                                    select(
+                                                        SunatCodes.c.Dscp.label("Status"),
+                                                        SunatCodes.c.IsFinal.label("Status_level")
+                                                    )
+                                                    .select_from(SalesOrderSunat)
+                                                    .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
+                                                    .filter(SalesOrderSunat.c.DocEntry == int(body.doc_entry))
+                                                ).mappings().first()
+                                    data.update(dict(result_final))
 
                             else:
                                 session.close()
@@ -1842,7 +1865,7 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
         return JSONResponse(
         status_code= status_code,
         content= {
-                "data": None,
+                "data": data,
                 "message": msg,
             }
         )
