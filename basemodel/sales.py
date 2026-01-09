@@ -62,6 +62,7 @@ class sales_order_for_cancel(BaseModel):
     doc_entry: Optional[str] = None
     doc_dscp: Optional[str] = None
 
+
 class sales_order(BaseModel):
     doc_tipo: Optional[str] = "NV" #nota de venta por defecto
     emisor_nombre : Optional[str] = "MUSEO LIBRERIA GENESIS"
@@ -116,6 +117,7 @@ class Item_Ticket_Close(BaseModel):
     dscp: Optional[str] = "" # 1
     qty: Optional[str] = "" # 10.00 sin igv
     total_linea: Optional[str] = "0.00" # 2.00
+    status: Optional[str] = None
 
 class Body_Ticket_Close(BaseModel):
     caja: Optional[str] = "0.00" #serie-correlativo

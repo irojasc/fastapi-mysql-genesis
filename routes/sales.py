@@ -651,7 +651,8 @@ async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register 
                     PymntGroup.c.PymntGroup.label("pay_method"),
                     Product.c.title.label("dscp"),
                     SalesOrderDetail.c.Quantity.label("qty"),
-                    SalesOrderDetail.c.Total.label("total_linea")
+                    SalesOrderDetail.c.Total.label("total_linea"),
+                    SalesOrder.c.DocStatus.label("doc_status"),
                 )
                 .join(SalesOrderDetail, SalesOrder.c.DocEntry == SalesOrderDetail.c.DocEntry)
                 .join(Product, SalesOrderDetail.c.idProduct == Product.c.id)
@@ -716,7 +717,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                 .where(
                     SalesOrderDetail.c.idProduct == CashRegister.c.Item2Code,
                     SalesOrder.c.CashBoxTS == CashRegister.c.CodeTS,
-                    SalesOrder.c.DocStatus == 'C' #<- agrega que tiene que estar cerrado la venta para sumar estampillas 👻
+                    SalesOrder.c.DocStatus == 'C' #<- agrega que tiene que estar cerrado la venta para sumar estampillas, no anulado 👻
                 )
                 .correlate(CashRegister)
                 .scalar_subquery()
@@ -907,7 +908,6 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                 
                 response = session.execute(stmt).mappings().all()
             
-                # results = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
                 items = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
                 header = [
                             {
@@ -931,7 +931,8 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                         "pay_method": idx["pay_method"],
                         "dscp": idx["dscp"],
                         "qty": str(idx["qty"]),
-                        "total_linea": idx["total_linea"].to_eng_string()
+                        "total_linea": idx["total_linea"].to_eng_string(),
+                        "status": idx["doc_status"]
                     }) for idx in items
                 ]})
                 
@@ -1811,6 +1812,7 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
                             #3.2 | actualiza cantidades
                             stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
 
+                            
                             result = session.execute(stmt, params)
 
                             if result.rowcount > 0:
@@ -1820,6 +1822,8 @@ async def Cancelar_Orden_De_Venta(body:sales_order_for_cancel, payload: jwt_depe
                                 status_code =  200
                                 msg = "Venta anulada con exito!"
 
+
+                                #CONSULTA FINAL DE LOS CAMBIOS EFECTUADOS
                                 if result_sale["DocType"] == 'NV':
                                     data.update(
                                         {
@@ -1950,11 +1954,9 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
             "item2Total": body.item2Total
         }
 
-        items = [{"enum": idx.enum, "pay_method": idx.pay_method , "dscp": idx.dscp, "qty": idx.qty, "total_linea": idx.total_linea}
+        items = [{"enum": idx.enum, "pay_method": idx.pay_method , "dscp": idx.dscp, "qty": idx.qty, "total_linea": idx.total_linea, "status": idx.status}
                  for idx in body.items]
         
-        # print(doc)
-
         status, message, file = generar_ticket_close(
                         nombre_archivo="ticket_cierre.pdf",
                         items=items,

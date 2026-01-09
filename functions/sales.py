@@ -396,6 +396,7 @@ def generar_ticket_close(nombre_archivo, items, do_c):
             leading=9,
             spaceAfter=0,
         )
+        
         estilo_encabezado_bold  = ParagraphStyle(
             'center_title_bold',
             fontName='Helvetica-Bold',
@@ -452,15 +453,26 @@ def generar_ticket_close(nombre_archivo, items, do_c):
             descripcion = truncar_texto(item['dscp'], 14)
 
             # Descripción con código debajo (usamos un Paragraph con salto de línea)
-            desc_paragraph = Paragraph(f"{descripcion}", estilo_descripcion)
+            if item['status'] == 'A': # formato para cuando linea esta anulada
+                desc_paragraph = Paragraph(f"<strike>{descripcion}</strike>", estilo_descripcion)
+            else:
+                desc_paragraph = Paragraph(f"{descripcion}", estilo_descripcion)
 
             fila = [
                 f"{item['enum']}",
                 desc_paragraph,
                 f"{item['qty']}",
                 f"{item['pay_method']}",
-                f"{item['total_linea']}",
+                f"{item['total_linea']}"
             ]
+
+            # fila = [
+            #     f"{item['enum']}",
+            #     desc_paragraph,
+            #     f"{item['qty']}",
+            #     f"{item['pay_method']}",
+            #     f"{item['total_linea']}",
+            # ]
             tabla_data.append(fila)
 
         # === Crear tabla ===
