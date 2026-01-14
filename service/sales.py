@@ -37,6 +37,22 @@ async def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
 
 
 # consulta estado
+async def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #este servicio tambien trae xml, cdr
+    if not params:
+        return None, 422
+    
+    payload = {**params, "TOKEN": MIFACT_TOKEN, "NUM_NIF_EMIS": MIFACT_MIRUC}
+    endpoint = f"{MIFACT_ENDPOINT}GetInvoice"
+
+    try:
+        # Aquí usamos el cliente asíncrono que pasamos por parámetro
+        response = await client.post(endpoint, json=payload, timeout=30.0)
+        return response.json(), response.status_code
+    except Exception as e:
+        print(f'Error at check_sales_document_status: {e}')
+        return {"msg": str(e)}, 422
+    
+# consulta estado
 async def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
     if not params:
         return None, 422

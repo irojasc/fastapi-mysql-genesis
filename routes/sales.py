@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select, asc, func, insert, and_, desc, text, update, case
+from sqlalchemy import select, asc, func, insert, and_, desc, text, update, case, or_
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlmodel.cashregister import CashRegister
 from sqlmodel.docseries import DocSeries
@@ -29,7 +29,7 @@ from config.db import con, session, MIFACT_MIRUC
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
-from service.sales import post_sales_document, cancel_sales_document
+from service.sales import post_sales_document, cancel_sales_document, check_sales_document_file
 import httpx
 import json
 
@@ -564,16 +564,20 @@ async def Get_Cash_Register_By_Param(cash_register_body: cash_register = Depends
         return returned_value
     
 
-@sales_route.get("/get_sale_order_detail/", status_code=200)
-async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=None):
+@sales_route.get("/get_sale_order_detail/", status_code=200, description="""
+    Este endpoint devuelve la información detallada de una orden de venta, 
+    y segun bandera retorna documento pdf (cierrefacturacion).
+    """)
+async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , payload: jwt_dependecy=None, client: httpx.AsyncClient = Depends(get_http_client)):
+    status_code = 422
     returnedVal = {
                     "message": "Something wrong happen",
-                    "status": False, 
-                    "data": []
+                    "data": {},
+                    "pdf": None,
+                    "url": None
                    }
     try:
-        if DocEntry is not None:
-
+        if body.DocEntry is not None and not(body.isDocument):
             stmt = (
                 select( 
                         SalesOrder.c.DocStatus.label("doc_status"),
@@ -599,7 +603,7 @@ async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=
                 .join(Product, SalesOrderDetail.c.idProduct == Product.c.id)
                 .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
                 .order_by(asc(SalesOrderDetail.c.LineNum))
-                .filter(SalesOrder.c.DocEntry == DocEntry)
+                .filter(SalesOrder.c.DocEntry == body.DocEntry)
             )
 
             result = session.execute(stmt).mappings().all()
@@ -624,21 +628,97 @@ async def Obtiene_Detalle_Orden_Venta(DocEntry:int=None, payload: jwt_dependecy=
                             for idx in body.items]
                 }
 
-                returnedVal.update({"message": "ok", "status": True, "data": doc})
+                returnedVal.update({"message": "ok", "data": doc})
+                status_code = 200
 
             else:
-                returnedVal.update({"message": "Something wrong happen", "status": False, "data": []})
+                returnedVal.update({"message": "Something wrong happen", "data": {}})
+                session.close()
+        
+        elif body.DocEntry is not None and body.isDocument: # para el caso que se unicamente documento
+            #analizamos el tipo de documento para ver si la consulta es al proveedor
+            result = session.execute(
+                    select( SalesOrder.c.DocType,
+                            SalesOrder.c.DocDate,
+                            DocType.c.SunatCode.label("COD_TIP_CPE"),
+                            #serie
+                            func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
+                            #Correlativo
+                            func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"))
+                    .outerjoin(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
+                    .outerjoin(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
+                    .outerjoin(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
+                    .filter(
+                        SalesOrder.c.DocEntry == body.DocEntry, 
+                        SalesOrder.c.DocStatus != "A", 
+                        or_(SalesOrderSunat.c.DocEntry == None, SunatCodes.c.IsFinal < 3)
+                        )
+                    ).mappings().first() #que no sea anulado
+            
+            if result and result["DocType"] in ("BOL", "FAC"):
+                #importante que solo debe consultar boleta y factura con estado 1 o 2, no 3
+                params = {
+                    "COD_TIP_CPE": result["COD_TIP_CPE"], #tipo de documento, fac, bol o NV
+                    "NUM_SERIE_CPE": result["NUM_SERIE_CPE"], #<- se consulta
+                    "NUM_CORRE_CPE": result["NUM_CORRE_CPE"], #<- se consulta
+                    "FEC_EMIS": result["DocDate"].strftime("%Y-%m-%d"), #<- se consulta
+                    "RETORNA_XML_ENVIO": "false",
+                    "RETORNA_XML_CDR": "false",
+                    "RETORNA_PDF": "true",
+                    "COD_FORM_IMPR":"004", #formato 80 mm
+                }
+                
+                json_data, status_code_request = await check_sales_document_file(client=client, params=params)
 
+                if status_code_request == 200 and not(json_data.get("pdf_bytes", None)):
+                    returnedVal.update({"message": str(json_data.get("errors", None))})
+
+                elif status_code_request == 200 and json_data.get("pdf_bytes", None):
+                    returnedVal.update(
+                                        {"message": "Documento encontrado!", 
+                                        "pdf": json_data.get("pdf_bytes", None),
+                                        "url": json_data.get("url", None)}
+                                        )
+                    status_code = 200
+                else:
+                    returnedVal.update({"message": "Error during request!"})
+
+            elif result and result["DocType"] in ("NV"):
+                #Obtiene solo nota de venta en pdf por docentry
+                respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=body.DocEntry), payload=payload)
+                
+                if respuesta.get("pdf", None):
+                    returnedVal.update(
+                                        {
+                                        "message": "Documento encontrado!", 
+                                        "pdf": respuesta.get("pdf", None),
+                                        "url": None
+                                        }
+                                        )
+                    status_code = 200
+
+                else:
+                    returnedVal.update({"message": "Error during request!"})
+
+            else:
+                returnedVal.update({"message": "No se encontro el documento solicitado", "data": {}})
+        
         else:
-            returnedVal.update({"message": "Debe ingresar un DocEntry Valido", "status": False, "data": []})
-        
-        
-        return returnedVal
+            returnedVal.update({"message": "Debe ingresar un DocEntry Valido", "data": {}})
         
     except Exception as e:
         print(f"An error occurred: {e}")
         returnedVal.update({"message": f"An error occurred: {e}", "status": False})
         return returnedVal
+    
+    finally:
+        session.close()
+        return JSONResponse(
+        status_code= status_code,
+        content= jsonable_encoder({
+                "data": returnedVal,
+            })
+        )
 
 @sales_route.get("/get_all_sales_order_of_cashregister/", status_code=200)
 async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register = Depends(), payload: jwt_dependecy = None):
@@ -1149,12 +1229,8 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
                 }
             ]})
 
-            # print(boleta_json)
-
             #SE PROCEDE A GRABAR EL CUERPO EN MI FACT
             json_data, status_code = await post_sales_document(client=client, params=boleta_json)
-
-            # print(json_data)
 
             #RECHAZADO POR EL PROVEEDOR 👻
             if "estado_documento" in json_data and json_data["estado_documento"] == '' and status_code == 200:
@@ -1458,6 +1534,78 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
         session.close()
 
 
+@sales_route.get("/get_pdf_for_sales_note/", status_code=200, description="""
+    Obtiene el pdf en bytes de nota de venta con el docentry.
+    """)
+async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, payload: jwt_dependecy):
+    try:
+        stmt = (
+                    select(SalesOrder.c.DocNum.label("doc_num"), 
+                            SalesOrder.c.DocDate.label("doc_date"), 
+                            Company.c.docName.label("card_name"), 
+                            Company.c.LicTradNum.label("card_num"), 
+                            SalesOrder.c.SubTotal.label("sub_total"),
+                            SalesOrder.c.DiscSum.label("dscto_total"),
+                            SalesOrder.c.VatSum.label("tax_total"),
+                            SalesOrder.c.DocTotal.label("total"),
+                            PymntGroup.c.PymntGroupName.label("pay_method"),
+                            Product.c.title.label("dscp"),
+                            Product.c.isbn.label("cod"),
+                            SalesOrderDetail.c.Quantity.label("qty"),
+                            SalesOrderDetail.c.UnitPrice.label("pvp"),
+                            SalesOrderDetail.c.DiscSum.label("dsct"),
+                            SalesOrderDetail.c.Total.label("total_linea"))
+                    .join(SalesOrderDetail, SalesOrder.c.DocEntry == SalesOrderDetail.c.DocEntry)
+                    .join(Company, SalesOrder.c.CardCode == Company.c.cardCode)
+                    .join(Product, SalesOrderDetail.c.idProduct == Product.c.id)
+                    .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
+                    .order_by(asc(SalesOrderDetail.c.LineNum))
+                    .filter(and_(SalesOrder.c.DocEntry == body.DocEntry, SalesOrder.c.DocType == 'NV')) #tiene que ser nota de venta si o si
+                )
+        
+        result = session.execute(stmt).mappings().all()
+
+        if result:
+            respuesta = await Crear_Ticket_PDF(body=build_body_ticket(result), payload=payload)
+            returned_value = {
+                "status": not(respuesta["status"]),
+                "message": respuesta["message"],
+                "pdf": respuesta["file"],
+                "url": None
+                }
+            
+        else:
+            returned_value= {
+                "status": False,
+                "message": "ok",
+                "pdf": None,
+                "url": None
+            }
+
+        
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
+        print(f"""Detalle SQLAlchemy: {e.orig}""")
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
+        print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
+        session.rollback()
+        session.close()
+        returned_value = []
+
+    finally:
+        session.close()
+        return returned_value
+
+
 @sales_route.post("/create_sales_order/", status_code=201)
 async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: httpx.AsyncClient = Depends(get_http_client)):
     #ABSORVE URL
@@ -1580,42 +1728,15 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
                         }
                 
                     if response["status_code"] == 201 and body.doc_tipo in ('NV'):
-                        stmt = (
-                                    select(SalesOrder.c.DocNum.label("doc_num"), 
-                                            SalesOrder.c.DocDate.label("doc_date"), 
-                                            Company.c.docName.label("card_name"), 
-                                            Company.c.LicTradNum.label("card_num"), 
-                                            SalesOrder.c.SubTotal.label("sub_total"),
-                                            SalesOrder.c.DiscSum.label("dscto_total"),
-                                            SalesOrder.c.VatSum.label("tax_total"),
-                                            SalesOrder.c.DocTotal.label("total"),
-                                            PymntGroup.c.PymntGroupName.label("pay_method"),
-                                            Product.c.title.label("dscp"),
-                                            Product.c.isbn.label("cod"),
-                                            SalesOrderDetail.c.Quantity.label("qty"),
-                                            SalesOrderDetail.c.UnitPrice.label("pvp"),
-                                            SalesOrderDetail.c.DiscSum.label("dsct"),
-                                            SalesOrderDetail.c.Total.label("total_linea"))
-                                    .join(SalesOrderDetail, SalesOrder.c.DocEntry == SalesOrderDetail.c.DocEntry)
-                                    .join(Company, SalesOrder.c.CardCode == Company.c.cardCode)
-                                    .join(Product, SalesOrderDetail.c.idProduct == Product.c.id)
-                                    .join(PymntGroup, SalesOrder.c.PymntGroup == PymntGroup.c.PymntGroup)
-                                    .order_by(asc(SalesOrderDetail.c.LineNum))
-                                    .filter(SalesOrder.c.DocEntry == response["data"]["docentry"])
-                                )
-                        
-                        result = session.execute(stmt).mappings().all()
 
-                        if isinstance(result, list) and len(result) > 0:
-                            respuesta = await Crear_Ticket_PDF(body=build_body_ticket(result), payload=payload)
-
-
+                        respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=response["data"]["docentry"]), payload=payload)
+            
                         return JSONResponse(
                             status_code= response["status_code"],
                             content= {
                                     "data": response["data"],
                                     "message": respuesta["message"] if not(respuesta["status"]) else response["message"],
-                                    "pdf": respuesta["file"],
+                                    "pdf": respuesta["pdf"],
                                     "url": None
                                 }
                         )
@@ -1973,6 +2094,12 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
         return returnedVal
     
     
+
+
+
+
+
+
 # @sales_route.post("/sincronizar_documentos/", status_code=201)
 async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
 

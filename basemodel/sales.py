@@ -36,8 +36,7 @@ class external_document(BaseModel):
     Status: Optional[int] = None
     SendDate: Optional[datetime] = None
     Ticket: Optional[str] = None
-    # pdf_bytes: Optional[str] = None
-    # pdf_url: Optional[str] = None
+    isDocument: Optional[bool] = None
 
 
 class item(BaseModel):

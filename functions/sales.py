@@ -654,7 +654,7 @@ async def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, do
                     print("¡Límite alcanzado! Abortando para intentar en el siguiente turno.")
                     break # Sale del bucle actual para esperar al próximo job (3 o 4 AM)
 
-                if "estado_documento" in json_data and json_data.get("estado_documento", None): #verifica que el estado del json exista
+                if json_data.get("estado_documento", None): #verifica que el estado del json exista
                     estado_documento = int(json_data["estado_documento"]) #convierte a entero el string del estado
                     if row["estado_documento"] != estado_documento: #si es distinto agrega en lista
                         returned_data.append({
