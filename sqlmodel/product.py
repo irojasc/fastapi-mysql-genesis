@@ -33,5 +33,6 @@ Product = Table("product", meta,
                 Column("CardCode", String(15), default=None), #proveedor por defecto
                 Column("VatBuy", String(8), default=None), #impuesto compra
                 Column("VatSell", String(2), default=None), #impuesto venta
+                Column("FileName", String(50), nullable=True, default=None), #nombre del archivo de imagen
                 )
 meta.create_all(bind=engine)
