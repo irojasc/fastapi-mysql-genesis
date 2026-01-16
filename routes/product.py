@@ -1,11 +1,12 @@
 import json
 import gspread
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, func
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session, CREDENTIALS_JSON
+from config.db import con, session, CREDENTIALS_JSON, BUCKET_NAME
+from config.s3_aws import get_s3_client
 from sqlmodel.product import Product
 from sqlmodel.ware_product import Ware_Product
 from sqlmodel.user_perm_mdl import User_perm_mdl
@@ -15,6 +16,7 @@ from google.auth.exceptions import GoogleAuthError
 from gspread.exceptions import GSpreadException
 from basemodel.product import product_maintenance
 from sqlalchemy.exc import SQLAlchemyError
+from fastapi import Response
 
 product_route = APIRouter(
     prefix = '/product',
@@ -210,3 +212,16 @@ async def delete_product(jwt_dependency: jwt_dependecy, idProduct: str = None, c
             status_code=401,
             content={"message": 'Token expired', "status": "error", "code": 401}
         )
+    
+@product_route.get("/imagen/{nombre_archivo}", description="Obtiene imagen de producto desde bucket s3 con el codigo interno del producto seguido de la extension del formato")
+async def obtener_imagen(nombre_archivo: str, jwt_dependency: jwt_dependecy, s3 = Depends(get_s3_client)):
+    try:
+        # Generar la URL para que el frontend pueda mostrarla
+        obj = s3.get_object(Bucket=BUCKET_NAME, Key=nombre_archivo)
+        cuerpo_imagen = obj['Body'].read()
+
+        # Devolver el binario con el tipo de contenido correcto
+        return Response(content=cuerpo_imagen, media_type="image/jpeg")
+    
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Error al descargar de S3")
