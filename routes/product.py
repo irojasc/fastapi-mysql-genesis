@@ -1,11 +1,12 @@
 import json
 import gspread
+import base64
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, func
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session, CREDENTIALS_JSON, BUCKET_NAME
+from config.db import con, session, CREDENTIALS_JSON, BUCKET_NAME, AWS_REGION
 from config.s3_aws import get_s3_client
 from sqlmodel.product import Product
 from sqlmodel.ware_product import Ware_Product
@@ -14,9 +15,10 @@ from functions.product import get_all_publishers
 from google.oauth2.service_account import Credentials
 from google.auth.exceptions import GoogleAuthError
 from gspread.exceptions import GSpreadException
-from basemodel.product import product_maintenance
+from basemodel.product import product_maintenance, product_basic_model
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import Response
+from botocore.exceptions import ClientError
 
 product_route = APIRouter(
     prefix = '/product',
@@ -213,15 +215,88 @@ async def delete_product(jwt_dependency: jwt_dependecy, idProduct: str = None, c
             content={"message": 'Token expired', "status": "error", "code": 401}
         )
     
-@product_route.get("/imagen/{nombre_archivo}", description="Obtiene imagen de producto desde bucket s3 con el codigo interno del producto seguido de la extension del formato")
-async def obtener_imagen(nombre_archivo: str, jwt_dependency: jwt_dependecy, s3 = Depends(get_s3_client)):
-    try:
-        # Generar la URL para que el frontend pueda mostrarla
-        obj = s3.get_object(Bucket=BUCKET_NAME, Key=nombre_archivo)
-        cuerpo_imagen = obj['Body'].read()
 
-        # Devolver el binario con el tipo de contenido correcto
-        return Response(content=cuerpo_imagen, media_type="image/jpeg")
+@product_route.get("/getlastimage", description="Obtiene imagen de producto desde bucket s3 con el codigo interno del producto seguido de la extension del formato")
+async def obtener_imagen(jwt_dependency: jwt_dependecy, body: product_basic_model = Depends(), s3 = Depends(get_s3_client)):
+    status_code = 422
+    returned_value = {
+        "message": "No action!",
+        "data": None, 
+        "action": None,
+        "url": None
+    }
     
+    try:
+        if not(body.DocEntry):
+            returned_value.update({"message": "Ingrese un ID de Producto Valido!"})
+        else:
+            stmt = (select(Product.c.FileName)
+                    .filter(Product.c.id == int(body.DocEntry)))
+            obj = session.execute(stmt).mappings().first()
+            
+            if obj["FileName"]:
+                # CASO 1: EXISTE EN DB PERO NO EN REMOTO ó EXISTE EN DB Y ARCHIVO REMOTO DIFERENTE
+                if not(body.FileName) or (obj["FileName"] != body.FileName): #RPTA: TRAE LA URL DESDE S3
+
+                    # inicia verificacion de existencia
+                    try:
+                        s3.head_object(Bucket=BUCKET_NAME, Key=obj["FileName"])
+                    except ClientError:
+                        raise HTTPException(status_code=404, detail="Archivo no existe en S3")
+                    # culmina verificacion de existencia
+
+                    ##ARMA EL BODY
+                    status_code = 200
+                    returned_value.update(
+                                            {
+                                            "data": {"FileName": obj["FileName"]},
+                                            "message": "FileName encontrado",
+                                            "action": "update",
+                                            "url": f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{obj['FileName']}"
+                                            }   
+                                        )
+                
+                elif (obj["FileName"] == body.FileName):
+                    status_code = 200
+                    returned_value.update(
+                                            {
+                                            "data": {"FileName": obj["FileName"]},
+                                            "message": "FileName encontrado!",
+                                            "action": "noaction",
+                                            "url": None
+                                            }   
+                                        )
+                    
+                else:
+                    status_code = 422
+                    returned_value.update(
+                                            {
+                                            "data": None,
+                                            "message": None,
+                                            "action": None,
+                                            "url": None
+                                            }   
+                                        )
+                
+            else:
+                status_code = 200
+                returned_value.update(
+                                        {"data": None,
+                                        "message": "FileName no existe!",
+                                        "action": "delete",
+                                        "url": None
+                                        }
+                                       )
+
     except Exception as e:
+        session.rollback()
+        session.close()
         raise HTTPException(status_code=404, detail="Error al descargar de S3")
+    
+    finally:
+        session.close()
+        return JSONResponse(
+            status_code= status_code,
+            content= returned_value
+        )
+   

@@ -34,8 +34,6 @@ class ware_product_(BaseModel):
     isbn: Optional[str] = None
     title: str
     autor: str
-    publisher: str
-    content: Optional[str] = None
     dateOut: Optional[str] = None
     idLanguage: Optional[str] = None
     pages: Optional[int] = None
@@ -57,3 +55,9 @@ class ware_product_(BaseModel):
     InvntryUom: Optional[str] =  'NIU'
     VatBuy: Optional[str] = None
     VatSell: Optional[str] = None
+
+
+class product_basic_model(BaseModel):
+    DocEntry: Optional[int] = None
+    FileName: Optional[str] = None
+    

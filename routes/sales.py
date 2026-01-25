@@ -247,10 +247,9 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
 
                 # for v in ventas:
 
-
                 # --- 2) Preparar detalle con conversiones seguras ---
                 detalle = []
-
+                
                 for v in ventas:
                     item = v.copy()
                     item["DocTotal"] = format(item["DocTotal"], "f")  # Decimal → string
@@ -272,7 +271,6 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                 
                 # Convertir Decimal → string para JSON seguro
                 cabecera = {tipo: format(total, "f") for tipo, total in totales.items()}
-
 
                 # --- 3) Armar diccionario final ---
                 return {
@@ -311,6 +309,7 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
             returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
 
             returned_value = build_sales_response(returned_value)
+            
             returned_value.update({"status": True, 
                                    "message": "ok",
                                    "dates": {
