@@ -60,4 +60,7 @@ class ware_product_(BaseModel):
 class product_basic_model(BaseModel):
     DocEntry: Optional[int] = None
     FileName: Optional[str] = None
+    # UserSign: Optional[str] = None # este valor sale del token
+    ContentType: Optional[str] = None
+
     

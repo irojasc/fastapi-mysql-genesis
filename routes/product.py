@@ -3,21 +3,23 @@ import gspread
 import base64
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text, func
+from sqlalchemy import select, text, func, insert
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
 from config.db import con, session, CREDENTIALS_JSON, BUCKET_NAME, AWS_REGION
 from config.s3_aws import get_s3_client
 from sqlmodel.product import Product
+from sqlmodel.uploads import Uploads
 from sqlmodel.ware_product import Ware_Product
 from sqlmodel.user_perm_mdl import User_perm_mdl
-from functions.product import get_all_publishers
+from functions.product import get_all_publishers, generate_filename
 from google.oauth2.service_account import Credentials
 from google.auth.exceptions import GoogleAuthError
 from gspread.exceptions import GSpreadException
 from basemodel.product import product_maintenance, product_basic_model
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import Response
+from routes.catalogs import Get_Time
 from botocore.exceptions import ClientError
 
 product_route = APIRouter(
@@ -220,7 +222,7 @@ async def delete_product(jwt_dependency: jwt_dependecy, idProduct: str = None, c
 async def obtener_imagen(jwt_dependency: jwt_dependecy, body: product_basic_model = Depends(), s3 = Depends(get_s3_client)):
     status_code = 422
     returned_value = {
-        "message": "No action!",
+        "message": "error",
         "data": None, 
         "action": None,
         "url": None
@@ -299,4 +301,94 @@ async def obtener_imagen(jwt_dependency: jwt_dependecy, body: product_basic_mode
             status_code= status_code,
             content= returned_value
         )
-   
+    
+
+#retornar nombre de archivo antiguo / nuevo
+#retorna Uuid de upload
+#retorna url para upload
+@product_route.get("/uploads/presign", description="Optine url prefirmada para carga ", status_code=200)
+async def obtener_url_prefirmada_para_actualizacion(payload: jwt_dependecy, body: product_basic_model = Depends(), s3 = Depends(get_s3_client)):
+    status_code = 422
+    returned_value = {
+        "message": "No action!",
+        "data": {}, 
+        "url": None
+    }
+
+    try:
+
+        # 0| CONSULTA NOMBRE ACTUAL DE ARCHIVO
+        Result = session.execute(select(Product.c.FileName).filter(Product.c.id == body.DocEntry)).mappings().first()
+
+
+        # 1| GENERACION DE NOMBRE DE ARCHIVO CON EXTENSION SEGUN EL CONTENT TYPE
+        FileName = generate_filename(numero=body.DocEntry, extension=body.ContentType, valor_inicial=Result['FileName'] if 'FileName' in Result else None)
+
+        if FileName: #verifica que existe nombre filename
+
+            content_type=f'image/{body.ContentType}'
+
+            url = s3.generate_presigned_url(
+                    ClientMethod="put_object",
+                    Params={
+                        "Bucket": BUCKET_NAME,
+                        "Key": FileName,
+                        "ContentType": content_type,
+                    },
+                    ExpiresIn=30  # 30 segundos
+                )
+            
+            returned_value.update({
+                "url": url,
+                "data": {
+                    "prev_filename": None,
+                    "new_filename": None,
+                    "UploadEntry": None,
+                    "ContentType": None
+                }
+            })
+            
+            #registra en tabla uploads
+            if url:
+                date = await Get_Time() #<-- obtiene hora
+                stmt = (insert(Uploads).
+                        values(
+                            FileName= FileName,
+                            ContentType= body.ContentType,
+                            Status= 'P',
+                            UserSign= payload.get("username"),
+                            LastDate= date["lima_bd_format"]
+                        )
+                )
+
+                affected = session.execute(stmt)
+
+                if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅, EMPIEZA CON REGISTRO DE LINEAS HIJAS
+                    Uuid = affected.inserted_primary_key[0]
+                    session.commit()
+
+                    returned_value.update({
+                        "message": "ok",
+                        "data": {
+                            "prev_filename": Result['FileName'],
+                            "new_filename": FileName,
+                            "UploadEntry": Uuid,
+                            "ContentType": content_type
+                        }
+                    })
+                    status_code = 200
+        
+    except Exception as e:
+        print(f"An error ocurred:{e}")
+        session.rollback()
+        session.close()
+        status_code = 422
+    
+    finally:
+        session.close()
+        return JSONResponse(
+            status_code= status_code,
+            content= returned_value
+        )
+
+        
