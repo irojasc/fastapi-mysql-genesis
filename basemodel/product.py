@@ -34,6 +34,8 @@ class ware_product_(BaseModel):
     isbn: Optional[str] = None
     title: str
     autor: str
+    publisher: Optional[str] = None
+    content: Optional[str] = None
     dateOut: Optional[str] = None
     idLanguage: Optional[str] = None
     pages: Optional[int] = None
@@ -59,8 +61,11 @@ class ware_product_(BaseModel):
 
 class product_basic_model(BaseModel):
     DocEntry: Optional[int] = None
+    UploadEntry: Optional[int] = None
     FileName: Optional[str] = None
-    # UserSign: Optional[str] = None # este valor sale del token
+    prevFileName: Optional[str] = None #obtiene nombre anterior de archivo en caso tenga
     ContentType: Optional[str] = None
+    ConfirmStatus: Optional[str] = None #P(Pending), C(Completed), F(Failed), E(Expira) 
+    FileRole: Optional[str] = None
 
     

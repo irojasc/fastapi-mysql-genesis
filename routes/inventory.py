@@ -804,7 +804,6 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         stock_checked = 0
 
         def encontrar_posicion(lista, valor):
-            # print(lista, valor)
             for indice, tupla in enumerate(lista):
                 if tupla[0] == valor:
                     return indice + 1
@@ -825,12 +824,14 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                             order_by(Ware.c.id.asc()). \
                             all()
         dict_exits_ware_codes = dict(exits_ware_codes)
+        
 
         ##aqui valida que no desabilite ware con stock positivo
         ware_not_enabled = list(map(lambda dato: dato.wareCode, filter(lambda data: not(data.active),product_.waredata)))
         ware_not_enabled = obtener_posiciones(exits_ware_codes, ware_not_enabled) if bool(len(ware_not_enabled)) else () #devuelve una tuple de idWares que no estan habilitados
 
         #FALTA 🚨🚨🚨🚨 FALTA QUE NO DESABILITE CON PRODUCTOS EN TRANSITO NI GIRADOS EN DOCUMENTOS
+        
 
         if bool(len(ware_not_enabled)):
             
@@ -854,34 +855,36 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             #HORA DE ACTUALIZACION
             create_date = await Get_Time()
 
-
-            stmt = update(Product).where(Product.c.id == product_.id).values(
-                idItem= scalarIdItem,
-                isbn=product_.isbn,
-                title=product_.title,
-                autor=product_.autor,
-                publisher=product_.publisher,
-                content=product_.content,
-                dateOut=datetime.strptime(product_.dateOut, '%Y-%m-%d').date() if product_.dateOut is not None else None,
-                idLanguage=scalarIdLanguage,
-                pages=product_.pages,
-                weight=product_.weight,
-                cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
-                width=product_.width,
-                height=product_.height,
-                editDate=create_date["lima_bd_format"] or None,
-                large=product_.large,
-                wholesale=b'\x01' if bool(product_.wholesale) else None,
-                antique=b'\x01' if bool(product_.antique) else None,
-                atWebProm=b'\x01' if bool(product_.atWebProm) else None,
-                CardCode=product_.CardCode,
-                InvntItem=product_.InvntItem,
-                SellItem=product_.SellItem,
-                BuyItem=product_.BuyItem,
-                InvntryUom=product_.InvntryUom,
-                VatBuy=product_.VatBuy,
-                VatSell=product_.VatSell
-            )
+            stmt = (update(Product)
+                    .where(Product.c.id == product_.id)
+                    .values(
+                            idItem= scalarIdItem,
+                            isbn=product_.isbn,
+                            title=product_.title,
+                            autor=product_.autor,
+                            publisher=product_.publisher,
+                            content=product_.content,
+                            dateOut=datetime.strptime(product_.dateOut, '%Y-%m-%d').date() if product_.dateOut is not None else None,
+                            idLanguage=scalarIdLanguage,
+                            pages=product_.pages,
+                            weight=product_.weight,
+                            cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
+                            width=product_.width,
+                            height=product_.height,
+                            editDate=create_date["lima_bd_format"] or None,
+                            large=product_.large,
+                            wholesale=b'\x01' if bool(product_.wholesale) else None,
+                            antique=b'\x01' if bool(product_.antique) else None,
+                            atWebProm=b'\x01' if bool(product_.atWebProm) else None,
+                            CardCode=product_.CardCode,
+                            InvntItem=product_.InvntItem,
+                            SellItem=product_.SellItem,
+                            BuyItem=product_.BuyItem,
+                            InvntryUom=product_.InvntryUom,
+                            VatBuy=product_.VatBuy,
+                            VatSell=product_.VatSell
+                        )
+                    )
             
             # Ejecutar la instrucción de actualización
             result = session.execute(stmt)
@@ -891,20 +894,25 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             #emp: [('STC', None), ('SNTG', 2), ('ALYZ', None), ('WEB', None), ('FRA', None)]
             
             dict_exits_ware_code_not_none = {k: v for k, v in dict_exits_ware_codes.items() if v is not None}
+            
 
             for dato in product_.waredata: #solo los wares que existen
                 if(dato.wareCode in dict_exits_ware_code_not_none.keys()): #si esta dentro de la lista, es por que existe
-                    stmt = update(Ware_Product).where(and_(Ware_Product.c.idWare == dict_exits_ware_code_not_none[dato.wareCode],
-                                                        Ware_Product.c.idProduct == product_.id)).values(
-                        pvNew = dato.pvp1 or 0.0,
-                        pvOld = dato.pvp2 or 0.0,
-                        loc = dato.location or None,
-                        dsct = dato.dsct or 0.0,
-                        qtyMinimun = dato.stockMin or 0,
-                        qtyMaximum = dato.stockMax or 0,
-                        isEnabled = b'\x01' if bool(dato.active) else b'\x00',
-                        editDate = create_date["lima_bd_format"] or None
-                    )
+                    stmt = (update(Ware_Product)
+                            .where(and_(
+                                        Ware_Product.c.idWare == dict_exits_ware_code_not_none[dato.wareCode],
+                                        Ware_Product.c.idProduct == product_.id))
+                            .values(
+                            pvNew = dato.pvp1 or 0.0,
+                            pvOld = dato.pvp2 or 0.0,
+                            loc = dato.location or None,
+                            dsct = dato.dsct or 0.0,
+                            qtyMinimun = dato.stockMin or 0,
+                            qtyMaximum = dato.stockMax or 0,
+                            isEnabled = b'\x01' if bool(dato.active) else b'\x00',
+                            editDate = create_date["lima_bd_format"] or None
+                            )
+                            )
                     # Ejecutar la instrucción de actualización
                     result = session.execute(stmt)
                     # print(f"""Filas actualizadas en tabla ware_product {result.rowcount}""")
