@@ -29,7 +29,7 @@ class ware_product_data(BaseModel):
 
 
 class ware_product_(BaseModel):
-    id: int
+    id: Optional[str] = None
     idItem: str
     isbn: Optional[str] = None
     title: str
@@ -37,7 +37,7 @@ class ware_product_(BaseModel):
     publisher: Optional[str] = None
     content: Optional[str] = None
     dateOut: Optional[str] = None
-    idLanguage: Optional[str] = None
+    idLanguage: Optional[str] = None #aqui viene el code, no el Id
     pages: Optional[int] = None
     weight: Optional[int] = None
     cover: Optional[bool] = None

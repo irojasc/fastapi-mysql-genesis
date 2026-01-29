@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, desc, asc, or_, func, and_, null, literal
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from utils.validate_jwt import jwt_dependecy
 from utils.converters import binary2bool
 from config.db import con, session, aliased
@@ -48,8 +48,10 @@ async def Get_All_Inventory_and_Data_Product(token_key: str = None, idProduct: i
         raise TypeError
     
     def get_statement(idProduct:int=None):
+        #se desactiva| LASTPROVIDER, LANGUAGE
         stmt = (select(Ware.c.code.label("ware_code"), Item.c.code.label("item_code"), Product.c.id.label("id_product"), Product.c.isbn, Product.c.title, Product.c.autor, 
-            Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
+            # Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
+            Product.c.publisher, Product.c.dateOut, literal(None).label("language"), Product.c.pages, Product.c.weight,
             Product.c.cover, Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, 
             Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld, Ware_Product.c.loc, 
             Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, 
@@ -57,7 +59,7 @@ async def Get_All_Inventory_and_Data_Product(token_key: str = None, idProduct: i
             Product.c.LastPurPrc, literal(None).label("LastProvider"), Product.c.VatBuy, Product.c.VatSell). \
             join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
             join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
-            join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
+            # join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
             join(Item, Product.c.idItem == Item.c.id).\
             order_by(asc(Product.c.id))
             )
@@ -107,19 +109,22 @@ async def Get_Last_Inventory_Data_Product_Changes(last_sync: datetime = Query(..
         #QUITA 10 MINUTOS PARA REALIZAR LA CONSULTA
         formated_lastsync = normalize_last_sync(last_sync) #resta 5 minutos para traer todos los cambios
 
-        subquery_ = select(Product.c.id).join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True)\
+        # .join(Language, Product.c.idLanguage == Language.c.id, isouter=True)\ [eSTO IBA encima de Item]
+        subquery_ = select(Product.c.id)\
+            .join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True)\
             .join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True)\
-            .join(Language, Product.c.idLanguage == Language.c.id, isouter=True)\
             .join(Item, Product.c.idItem == Item.c.id)\
             .filter(
                 or_(Product.c.creationDate >= formated_lastsync, 
                     Product.c.editDate >= formated_lastsync, 
                     Ware_Product.c.creationDate >= formated_lastsync, 
-                    Ware_Product.c.editDate >= formated_lastsync))
+                    Ware_Product.c.editDate >= formated_lastsync)
+                    )
 
         #get select subquery sqlalchemy?
         stmt = (select(Ware.c.code.label("ware_code"), Item.c.code.label("item_code"), Product.c.id.label("id_product"), Product.c.isbn, Product.c.title, Product.c.autor, 
-                    Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
+                    # Product.c.publisher, Product.c.dateOut, Language.c.language, Product.c.pages, Product.c.weight, 
+                    Product.c.publisher, Product.c.dateOut, literal(None).label("language"), Product.c.pages, Product.c.weight, 
                     Product.c.cover, Product.c.width, Product.c.height, Ware_Product.c.qtyNew, Ware_Product.c.qtyOld, 
                     Ware_Product.c.qtyMinimun, Ware_Product.c.pvNew, Ware_Product.c.pvOld, Ware_Product.c.loc, 
                     Ware_Product.c.isEnabled, Ware_Product.c.dsct, Ware_Product.c.idWare, Ware_Product.c.qtyMaximum, 
@@ -127,7 +132,8 @@ async def Get_Last_Inventory_Data_Product_Changes(last_sync: datetime = Query(..
                     Product.c.LastPurPrc, literal(None).label("LastProvider"), Product.c.VatBuy, Product.c.VatSell). \
                     join(Ware_Product, Product.c.id == Ware_Product.c.idProduct, isouter=True). \
                     join(Ware, Ware_Product.c.idWare == Ware.c.id, isouter=True). \
-                    join(Language, Product.c.idLanguage == Language.c.id, isouter=True).join(Item, Product.c.idItem == Item.c.id). \
+                    # join(Language, Product.c.idLanguage == Language.c.id, isouter=True). \
+                    join(Item, Product.c.idItem == Item.c.id). \
                     filter(Product.c.id.in_(subquery_)).order_by(asc(Product.c.id)))
         
         results = session.execute(stmt).mappings().all() #obtine en formato diccionario
@@ -162,7 +168,8 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
         
         if not(idProduct): #CASO 1| CREAR NUEVO ARTICULO
             #ID
-            body.update({'id': str(session.query(func.max(Product.c.id) + 1).scalar())}) #carga id
+            # body.update({'id': str(session.query(func.max(Product.c.id) + 1).scalar())}) #carga id
+            body.update({'id': 'Pendiente'}) #Cambia: Id se genera cuando se registra el articulo
             
             #ITEM
             body.update({'item': {
@@ -291,9 +298,9 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
         
         else: #CASO 2| EDITAR ARTICULO EXISTENTE
             stmt = (
-                select(Product, Item.c.code.label("item_code"), Language.c.code.label("lang_code"))
+                select(Product, Item.c.code.label("item_code"), literal(None).label("lang_code"))
                 .join(Item, Product.c.idItem == Item.c.id)
-                .outerjoin(Language, Product.c.idLanguage == Language.c.id)
+                # .outerjoin(Language, Product.c.idLanguage == Language.c.id)
                 .where(Product.c.id == int(idProduct))
             )
 
@@ -801,6 +808,13 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: j
 @inventory_route.patch("/product/", status_code=200)
 async def update_warehouse_product(product_: ware_product_ = None, jwt_dependency: jwt_dependecy = None):
     try:
+        try:
+            idProduct = int(product_.id)
+        
+        except (TypeError, ValueError):
+            idProduct = None
+            
+
         stock_checked = 0
 
         def encontrar_posicion(lista, valor):
@@ -820,7 +834,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         
         # trae warecodes existentes, los que no con null
         exits_ware_codes = session.query(Ware.c.code, Ware_Product.c.idWare). \
-                            join(Ware_Product, and_(Ware_Product.c.idWare == Ware.c.id, Ware_Product.c.idProduct == product_.id), isouter=True). \
+                            join(Ware_Product, and_(Ware_Product.c.idWare == Ware.c.id, Ware_Product.c.idProduct == idProduct), isouter=True). \
                             order_by(Ware.c.id.asc()). \
                             all()
         dict_exits_ware_codes = dict(exits_ware_codes)
@@ -838,7 +852,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             #obtiene stock de ware not enabled
             stock_checked = session.query(func.sum(Ware_Product.c.qtyNew)). \
                             filter(Ware_Product.c.idWare.in_(ware_not_enabled)). \
-                            filter(Ware_Product.c.idProduct == product_.id).scalar()
+                            filter(Ware_Product.c.idProduct == idProduct).scalar()
             
             ##IMPORTANTE, CUANDO stock_checked is None, entonces es por que solo se esta creando data en almacen, pero no se esta activando
             stock_checked = stock_checked if stock_checked is not None else 0
@@ -848,7 +862,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             scalarIdItem = session.query(Item.c.id).filter(Item.c.code == product_.idItem).scalar()
 
             # trae idLanguage apartir de languageCode
-            scalarIdLanguage = session.query(Language.c.id).filter(Language.c.code == product_.idLanguage).scalar() if product_.idLanguage is not None else None
+            # scalarIdLanguage = session.query(Language.c.id).filter(Language.c.code == product_.idLanguage).scalar() if product_.idLanguage is not None else None
 
             # trae stock positivo para wareCodes con enable false
 
@@ -856,7 +870,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             create_date = await Get_Time()
 
             stmt = (update(Product)
-                    .where(Product.c.id == product_.id)
+                    .where(Product.c.id == idProduct)
                     .values(
                             idItem= scalarIdItem,
                             isbn=product_.isbn,
@@ -865,7 +879,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                             publisher=product_.publisher,
                             content=product_.content,
                             dateOut=datetime.strptime(product_.dateOut, '%Y-%m-%d').date() if product_.dateOut is not None else None,
-                            idLanguage=scalarIdLanguage,
+                            idLanguage=None,
                             pages=product_.pages,
                             weight=product_.weight,
                             cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
@@ -901,7 +915,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                     stmt = (update(Ware_Product)
                             .where(and_(
                                         Ware_Product.c.idWare == dict_exits_ware_code_not_none[dato.wareCode],
-                                        Ware_Product.c.idProduct == product_.id))
+                                        Ware_Product.c.idProduct == idProduct))
                             .values(
                             pvNew = dato.pvp1 or 0.0,
                             pvOld = dato.pvp2 or 0.0,
@@ -920,7 +934,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                 elif (dato.exits and (dato.wareCode not in dict_exits_ware_code_not_none.keys())):
                     stmt = Ware_Product.insert().values(
                         {'idWare': encontrar_posicion(exits_ware_codes, dato.wareCode), #esto se tiene que revisar
-                        'idProduct': product_.id,
+                        'idProduct': idProduct,
                         'qtyNew': 0,
                         'qtyOld': 0,
                         'pvNew': dato.pvp1 or 0.0,
@@ -939,10 +953,9 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             session.commit()
             session.close()
 
-            result_format = await Get_All_Inventory_and_Data_Product(idProduct=product_.id)
+            result_format = await Get_All_Inventory_and_Data_Product(idProduct=idProduct)
 
             # Retornar el número de filas afectadas (puedes también retornar algo más si lo necesitas)
-            print(result_format)
             content = {
                 "success": True,
                 "message": "Producto actualizado con éxito",
@@ -978,6 +991,7 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
 
 @inventory_route.post("/product/", status_code=200)
 async def create_warehouse_product(product_: ware_product_ = None, jwt_dependency: jwt_dependecy = None):
+    
     def buscar_valor(lista, clave):
         for item in lista:
             if item[0] == clave:
@@ -985,11 +999,21 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
         return None  # Si no encuentra la clave, devuelve None
     
     try:
+        
+        #OBTIENE ID CONSECUTIVO
+        last_id = session.execute(
+                    select(Product.c.id)
+                    .order_by(Product.c.id.desc())
+                    .limit(1)
+                    .with_for_update() #congela la fila para evitar colision con otros registros
+                    ).scalar_one_or_none()
+        idProduct = (last_id or 0) + 1
+
         # trae idIitem apartir de itemCode
         scalarIdItem = session.query(Item.c.id).filter(Item.c.code == product_.idItem).scalar()
 
         # trae idLanguage apartir de languageCode
-        scalarIdLanguage = session.query(Language.c.id).filter(Language.c.code == product_.idLanguage).scalar() if product_.idLanguage is not None else None
+        # scalarIdLanguage = session.query(Language.c.id).filter(Language.c.code == product_.idLanguage).scalar() if product_.idLanguage is not None else None
 
         # obtener la lista de wares
         wares = session.query(Ware.c.code, Ware.c.id).all()
@@ -997,9 +1021,10 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
 
         #HORA DE REGISTRO
         create_date = await Get_Time()
-        
+
+
         stmt = insert(Product).values(
-            id=product_.id,
+            id=idProduct,
             idItem= scalarIdItem,
             isbn=product_.isbn,
             title=product_.title,
@@ -1007,7 +1032,7 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             publisher=product_.publisher,
             content=product_.content,
             dateOut=datetime.strptime(product_.dateOut, '%Y-%m-%d').date() if product_.dateOut is not None else None,
-            idLanguage=scalarIdLanguage,
+            idLanguage=None,
             pages=product_.pages,
             weight=product_.weight,
             cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
@@ -1034,7 +1059,7 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             for dato in product_.waredata: #solo los wares que existen
                 stmt = Ware_Product.insert().values(
                     {'idWare': buscar_valor(wares, dato.wareCode), #retornar el id del Ware cuando envio ejmp. 'SNTG'
-                    'idProduct': product_.id,
+                    'idProduct': idProduct,
                     'qtyNew': 0,
                     'qtyOld': 0,
                     'pvNew': dato.pvp1 or 0.0,
@@ -1054,7 +1079,7 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
 
             session.commit()
 
-            result_format = await Get_All_Inventory_and_Data_Product(idProduct=product_.id) #consulta ware product creado
+            result_format = await Get_All_Inventory_and_Data_Product(idProduct=idProduct) #consulta ware product creado
 
             session.close() #cierra conexion si todo va bien
 
@@ -1063,10 +1088,22 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                 "message": f"¡Producto registrado!",
                 "object": result_format[0] #devuelve ware product creado
             }
+
             return JSONResponse(content=jsonable_encoder(content), status_code=200)
         
     
+    except IntegrityError:
+        session.rollback()
+        session.close()
+        content = {
+            "success": False,
+            "message": f"An error ocurred: {e}",
+            "object": None
+        }
+        return JSONResponse(content=content, status_code=500)
+    
     except Exception as e:
+        session.rollback()
         session.close()
         content = {
             "success": False,
