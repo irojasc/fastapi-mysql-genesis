@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict
 
 # Define a Pydantic model
 class product_maintenance(BaseModel):
@@ -37,7 +37,7 @@ class ware_product_(BaseModel):
     publisher: Optional[str] = None
     content: Optional[str] = None
     dateOut: Optional[str] = None
-    idLanguage: Optional[str] = None #aqui viene el code, no el Id
+    idLanguage: Optional[List[Dict]] = Field(default_factory=list)
     pages: Optional[int] = None
     weight: Optional[int] = None
     cover: Optional[bool] = None

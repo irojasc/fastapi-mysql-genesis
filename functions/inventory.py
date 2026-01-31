@@ -1,4 +1,5 @@
 import datetime
+from sqlalchemy import select, delete, insert
 
 def changeBin2Bool(data):
     # Define the binary string
@@ -99,4 +100,66 @@ def get_all_active_transfer(data: list = []):
         return (myList, 'Ok')
     except Exception as e:
         return ([], str(e))
+    
+
+def sync_product_languages(
+        session,
+        product_id: int,
+        langs: list[dict],
+        ProductLanguage = None
+    ):
+    try:
+        # -------------------------
+        # 1️⃣ ids desde la lista
+        # -------------------------
+        new_ids = {lang["idLang"] for lang in langs if "idLang" in lang}
+
+        # -------------------------
+        # 2️⃣ ids actuales en DB
+        # -------------------------
+        stmt = select(ProductLanguage.c.idLanguage).where(
+            ProductLanguage.c.idProduct == product_id
+        )
+        current_ids = {
+            row.idLanguage for row in session.execute(stmt)
+        }
+
+        # -------------------------
+        # 3️⃣ diferencias
+        # -------------------------
+        to_insert = new_ids - current_ids
+        to_delete = current_ids - new_ids
+
+        # -------------------------
+        # 4️⃣ DELETE masivo
+        # -------------------------
+        if to_delete:
+            stmt = delete(ProductLanguage).where(
+                ProductLanguage.c.idProduct == product_id,
+                ProductLanguage.c.idLanguage.in_(to_delete)
+            )
+            session.execute(stmt)
+
+        # -------------------------
+        # 5️⃣ INSERT masivo
+        # -------------------------
+        if to_insert:
+            rows = [
+                {
+                    "idProduct": product_id,
+                    "idLanguage": lang_id
+                }
+                for lang_id in to_insert
+            ]
+
+            stmt = insert(ProductLanguage).values(rows)
+            session.execute(stmt)
+
+        return True, 'Ok'
+
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+        return False, e
+
+    
                         
