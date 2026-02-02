@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import select, delete, insert
+from sqlalchemy import select, delete, insert, update
 
 def changeBin2Bool(data):
     # Define the binary string
@@ -102,6 +102,84 @@ def get_all_active_transfer(data: list = []):
         return ([], str(e))
     
 
+def sync_product_categories(
+        session,
+        product_id: int,
+        desired: list[dict],
+        ProductCategories = None
+    ):
+    try:
+        # 1️⃣ Estado actual en DB
+        rows = session.execute(
+            select(
+                ProductCategories.c.idCategory,
+                ProductCategories.c.isMain
+                )
+            .where(ProductCategories.c.idProduct == product_id)
+        ).mappings().all()
+
+        db_map = {
+                row["idCategory"]: row["isMain"]
+                for row in rows
+            }
+        
+        incoming_map = {
+            item["idCategory"]: item["isMain"]
+            for item in desired
+        }
+
+        # 2️⃣ INSERT
+        to_insert = [
+            {
+                "idProduct": product_id,
+                "idCategory": cat_id,
+                "isMain": is_main
+            }
+            for cat_id, is_main in incoming_map.items()
+            if cat_id not in db_map
+        ] #inserta si el key del desired list no esta en la lista general
+
+        if to_insert: #verifica si  hay opciones para cambiar
+            session.execute(
+                insert(ProductCategories),
+                to_insert
+            )
+
+        # 3️⃣ UPDATE
+        for cat_id, is_main in incoming_map.items():
+            if cat_id in db_map and db_map[cat_id] != is_main:
+                stmt = (
+                    update(ProductCategories)
+                    .where(
+                        ProductCategories.c.idProduct == product_id,
+                        ProductCategories.c.idCategory == cat_id
+                    )
+                    .values(isMain=is_main)
+                )
+                session.execute(stmt)
+
+        # 4️⃣ DELETE
+        to_delete = [
+            cat_id
+            for cat_id in db_map
+            if cat_id not in incoming_map
+        ]
+
+        if to_delete:
+            stmt = (
+                delete(ProductCategories)
+                .where(
+                    ProductCategories.c.idProduct == product_id,
+                    ProductCategories.c.idCategory.in_(to_delete)
+                )
+            )
+            session.execute(stmt)
+                
+        return True, 'Ok!'
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+        return False, e
+
 def sync_product_languages(
         session,
         product_id: int,
@@ -161,5 +239,64 @@ def sync_product_languages(
         print(f"An error ocurred: {e}")
         return False, e
 
+
+def build_path(category_id: int, cat_by_id: dict):
+    path = []
+    current = cat_by_id[category_id]
+
+    while current:
+        path.append(current["id"])
+        parent_id = current["id_parent"]
+        current = cat_by_id.get(parent_id)
+
+    return list(reversed(path))
+
+def get_root(category_id: int, cat_by_id: dict):
+    current = cat_by_id[category_id]
+    while current["id_parent"] is not None:
+        current = cat_by_id[current["id_parent"]]
+    return current
+
+def makeSelectedCategories(lines = [], cat_by_id = {}):
+    try:
+        result = []
+
+        for row in lines:
+            category = cat_by_id[row["idUltimo"]]
+            root = get_root(row["idUltimo"], cat_by_id)
+            path = build_path(row["idUltimo"], cat_by_id)
+
+            if category["level"] == 1:
+                # 🟢 Casuística especial: categoría raíz
+                result.append({
+                    "levelRaiz": root["level"],
+                    "idRaiz": root["id"],
+                    "nameRaiz": root["name"],
+
+                    "levelUltimo": None,
+                    "idUltimo": None,
+                    "nameUltimo": None,
+
+                    "isMain": row["isMain"],
+                    "path": path,   # ejemplo: [2]
+                })
+            else:
+                # 🔵 Caso normal
+                result.append({
+                    "levelRaiz": root["level"],
+                    "idRaiz": root["id"],
+                    "nameRaiz": root["name"],
+
+                    "levelUltimo": category["level"],
+                    "idUltimo": category["id"],
+                    "nameUltimo": category["name"],
+
+                    "isMain": row["isMain"],
+                    "path": path,   # ejemplo: [2, 15, 18]
+                })
+
+        return result, True
+    except Exception as e:
+        return [], False
     
                         

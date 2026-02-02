@@ -4,7 +4,9 @@ from sqlalchemy import select, asc, func, insert, and_
 from sqlmodel.ovtg import OVTG
 from sqlmodel.oafv import OAFV
 from sqlmodel.language import Language
+from sqlmodel.categories import Categories
 from utils.validate_jwt import jwt_dependecy
+from functions.catalogs import group_categories_by_family
 from config.db import con, session
 from datetime import datetime, timezone
 import pytz
@@ -91,6 +93,29 @@ async def Get_Languages(jwt_dependency: jwt_dependecy = None):
     except Exception as e:
         session.rollback()
         session.close()
+        returned_value = []
+        print(f"An error ocurred: {e}")
+    finally:
+        session.close()
+        return returned_value
+
+@catalog_route.get("/categories/")
+async def Get_Product_Category(jwt_dependency: jwt_dependecy = None):
+    returned_value = []
+    try:
+        #nueva consulta
+        stmt = (select(Categories.c.id, 
+                       Categories.c.Level.label('level'), 
+                       Categories.c.Name.label('name'),
+                       Categories.c.idParent)
+                )
+        response = session.execute(stmt).mappings().all()
+        returned_value = group_categories_by_family(categories=response)
+
+    except Exception as e:
+        session.rollback()
+        session.close()
+        returned_value = []
         print(f"An error ocurred: {e}")
     finally:
         session.close()

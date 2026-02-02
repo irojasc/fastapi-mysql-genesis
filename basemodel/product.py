@@ -37,6 +37,7 @@ class ware_product_(BaseModel):
     publisher: Optional[str] = None
     content: Optional[str] = None
     dateOut: Optional[str] = None
+    idCategory: Optional[List[Dict]] = Field(default_factory=list)
     idLanguage: Optional[List[Dict]] = Field(default_factory=list)
     pages: Optional[int] = None
     weight: Optional[int] = None

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, desc, asc, or_, func, and_, null, literal, delete, insert, update
 from fastapi.encoders import jsonable_encoder
@@ -15,10 +15,12 @@ from sqlmodel.ware_product import Ware_Product
 from sqlmodel.transfer_product import Transfer_Product
 from sqlmodel.operation_reason import Operation_Reason
 from sqlmodel.productlanguage import ProductLanguage
+from sqlmodel.productcategories import ProductCategories
+from sqlmodel.categories import Categories
 from sqlmodel.uom import UOM
 from sqlmodel.company import Company
 from functions.catalogs import normalize_last_sync
-from functions.inventory import get_all_inventory_data, get_all_active_transfer, sync_product_languages
+from functions.inventory import get_all_inventory_data, get_all_active_transfer, sync_product_languages, makeSelectedCategories, sync_product_categories
 from basemodel.inventory import InOut_Qty, WareProduct
 from basemodel.product import ware_product_
 from basemodel.ware import ware_edited
@@ -182,6 +184,8 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             body.update({'pages': 0})
             #LANGUAGE
             body.update({'language': []}) #<- cambia, solo trae lenguajes o pares validos
+            #CATEGORY
+            body.update({'category': []}) #<- va lista vacia por que el producto es nuevo
             #WEIGHT
             body.update({'weight': None})
             #LARGE
@@ -296,10 +300,41 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
                 .join(ProductLanguage, Language.c.id == ProductLanguage.c.idLanguage)
                 .filter(ProductLanguage.c.idProduct == int(idProduct))
             )
+
+            stmt_2_pairs_categories = (
+                        select(
+                            ProductCategories.c.idCategory.label("idUltimo"),
+                            ProductCategories.c.isMain,
+
+                            Categories.c.Name.label("nameUltimo"),
+                            Categories.c.Level.label("levelUltimo"),
+                            Categories.c.idParent.label("parent_id"),
+                        )
+                        .join(Categories, Categories.c.id == ProductCategories.c.idCategory)
+                        .where(ProductCategories.c.idProduct == int(idProduct))
+                    )
             
-            product = session.execute(stmt).mappings().first() #obtine en formato diccionario
+            pairs_all_categories = session.execute(
+                                select(
+                                    Categories.c.id,
+                                    Categories.c.Name.label('name'),
+                                    Categories.c.Level.label('level'),
+                                    Categories.c.idParent.label('id_parent'),
+                                )
+                            ).mappings().all()
+            
+            #OBTIENE LANG CODES Y ITEMS CODES
+            product = session.execute(stmt).mappings().first() #obtine en formato diccionario de item codes
+            #OBTIENE LANGUAGES
             pairs_languages = session.execute(stmt_1_pairs_languages).mappings().all()#obtiene pares de lenguages
             pairs_languages = [dict(row) for row in pairs_languages] #convierte formato row mapping en dict
+            #OBTIENE CATEGORIES
+            pairs_categories = session.execute(stmt_2_pairs_categories).mappings().all()# obtiene pares de categorias para idProduct
+            cat_by_id = {c["id"]: c for c in pairs_all_categories}
+            pairs_categories, status = makeSelectedCategories(lines=pairs_categories, cat_by_id=cat_by_id)
+            if not status:
+                raise RuntimeError("Error obteniendo categorias de producto")
+
 
             # #PRODUCT
             body.update({'id': str(product["id"])}) #ID
@@ -313,6 +348,7 @@ async def Get_WareHouse_Product_By_Id(idProduct: str = None, jwt_dependency: jwt
             body.update({'release': str(product["dateOut"].year or '') if bool(product["dateOut"]) else None}) #RELEASE
             body.update({'pages': product["pages"] or None}) #PAGES
             body.update({'language': pairs_languages or []}) #LANGUAGE
+            body.update({'category': pairs_categories or []}) #CATEGORIES
             body.update({'weight': product["weight"] or None}) #WEIGHT
             body.update({'large': product["large"] or None}) #LARGE
             body.update({'width': product["width"] or None}) #WIDTH
@@ -940,7 +976,12 @@ async def update_warehouse_product(product_: ware_product_ = None, jwt_dependenc
             #PROCESO DE ACTUALIZACION DE IDIOMAS
             status, msg = sync_product_languages(session=session, product_id=idProduct, langs=product_.idLanguage, ProductLanguage=ProductLanguage)
             if not status:
-                raise RuntimeError(msg)
+                raise RuntimeError(f"No se realizo el commit durante actualizacion de idiomas, revisar {msg}")
+            
+            #PROCESO DE ACTUALIZACION DE CATEGORIAS
+            status, msg = sync_product_categories(session=session, product_id=idProduct, desired=product_.idCategory, ProductCategories=ProductCategories)
+            if not status:
+                raise RuntimeError(f"No se realizo el commit durante actualizacion de categorias, revisar {msg}")
                 
             # Confirmar la transacción
             session.commit()
@@ -1060,7 +1101,25 @@ async def create_warehouse_product(product_: ware_product_ = None, jwt_dependenc
                 result = session.execute(insert(ProductLanguage).values(rows))
                 if result.rowcount == 0: #no afecta ninguna fila o es failed
                     session.rollback()
-                    raise RuntimeError("Error cargando lenguajes de producto")
+                    raise RuntimeError("Error cargando lenguajes de producto | antes de ware dialog")
+                
+
+            #Aqui evalua el tema de las categorias
+            if isinstance(product_.idCategory, list) and product_.idCategory:
+                rows = [
+                    {
+                        "idProduct": idProduct,
+                        "idCategory": cate["idCategory"],
+                        "isMain": cate["isMain"]
+                    }
+                    for cate in product_.idCategory
+                    if "idCategory" in cate
+                ]
+                result = session.execute(insert(ProductCategories).values(rows))
+                if result.rowcount == 0: #no afecta ninguna fila o es failed
+                    session.rollback()
+                    raise RuntimeError("Error cargando categorias de producto | antes de ware_dialog")
+
 
             #continua agregando los datos de los almacenes
             for dato in product_.waredata: #solo los wares que existen

@@ -1,4 +1,6 @@
 from datetime import datetime, timezone, timedelta
+from typing import List, Dict, Any
+from collections import defaultdict
 import pytz
 
 def normalize_last_sync(last_sync_str: str) -> str:
@@ -51,3 +53,35 @@ def get_lima_time_formatted() -> tuple[str, str]:
     hora_str = now_lima.strftime("%H:%M:%S") 
     
     return hora_str
+
+
+def group_categories_by_family(categories: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    by_id = {c["id"]: c for c in categories}
+    children = defaultdict(list)
+
+    # Construimos el mapa padre -> hijos
+    for c in categories:
+        if c["idParent"] is not None:
+            children[c["idParent"]].append(c)
+
+    def collect_descendants(root_id: int) -> List[Dict[str, Any]]:
+        result = []
+
+        stack = children.get(root_id, []).copy()
+        while stack:
+            node = stack.pop()
+            result.append(node)
+            stack.extend(children.get(node["id"], []))
+
+        return result
+
+    families = []
+
+    # Cada level 1 inicia una familia
+    for c in categories:
+        if c["level"] == 1 and c["idParent"] is None:
+            family = [c]
+            family.extend(collect_descendants(c["id"]))
+            families.append(family)
+
+    return families
