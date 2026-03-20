@@ -4,8 +4,8 @@ from config.db import meta, engine
 from datetime import datetime
 
 Ware_Product = Table("ware_product", meta, 
-                Column("idWare", Integer, nullable=False, unique=True, primary_key=True), 
-                Column("idProduct", Integer, nullable=True),
+                Column("idWare", Integer, nullable=False, primary_key=True), 
+                Column("idProduct", Integer, nullable=False, primary_key=True),
                 Column("qtyNew", Integer, nullable=False), 
                 Column("qtyOld", Integer,  default=0), 
                 Column("pvNew", Float, default=0),

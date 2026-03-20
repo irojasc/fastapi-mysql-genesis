@@ -1228,6 +1228,9 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
                 }
             ]})
 
+
+            print(json.dumps(boleta_json, indent=4, ensure_ascii=False))
+
             #SE PROCEDE A GRABAR EL CUERPO EN MI FACT
             json_data, status_code = await post_sales_document(client=client, params=boleta_json)
 
