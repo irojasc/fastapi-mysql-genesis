@@ -15,6 +15,15 @@ engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
     #lo de arriba para conocer el background de sql
     )
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = Session()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 session = Session()
 meta = MetaData()
 con = engine.connect()
