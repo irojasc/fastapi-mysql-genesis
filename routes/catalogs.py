@@ -33,29 +33,29 @@ async def Get_Time(jwt_dependency: jwt_dependecy = None):
         "lima_transfer_format": now_lima.strftime("%Y-%m-%d")
     }
 
-@catalog_route.get("/tax_types/")
-async def Get_Taxes(type: str = None , jwt_dependency: jwt_dependecy = None):
-    returned_value = []
-    try:
-        #nueva consulta
-        if type is not None and type == 'p': #purchase
-            stmt = (select(OVTG).filter(OVTG.c.IsActive == 1))
-            returned_value = session.execute(stmt).mappings().all()
+# @catalog_route.get("/tax_types/")
+# async def Get_Taxis(type: str = None , jwt_dependency: jwt_dependecy = None):
+#     returned_value = []
+#     try:
+#         #nueva consulta
+#         if type is not None and type == 'p': #purchase
+#             stmt = (select(OVTG).filter(OVTG.c.IsActive == 1))
+#             returned_value = session.execute(stmt).mappings().all()
         
         
-        if type is not None and type == 's': #sell
-            stmt = (
-                    select(OAFV, OVTG.c.Rate)
-                    .join(OVTG, OAFV.c.VatCode == OVTG.c.VatCode)
-                    .filter(OAFV.c.IsActive == 'Y'))
-            returned_value = session.execute(stmt).mappings().all()
-    except Exception as e:
-        session.rollback()
-        session.close()
-        print(f"An error ocurred: {e}")
-    finally:
-        session.close()
-        return [dict(item) for item in returned_value]
+#         if type is not None and type == 's': #sell
+#             stmt = (
+#                     select(OAFV, OVTG.c.Rate)
+#                     .join(OVTG, OAFV.c.VatCode == OVTG.c.VatCode)
+#                     .filter(OAFV.c.IsActive == 'Y'))
+#             returned_value = session.execute(stmt).mappings().all()
+#     except Exception as e:
+#         session.rollback()
+#         session.close()
+#         print(f"An error ocurred: {e}")
+#     finally:
+#         session.close()
+#         return [dict(item) for item in returned_value]
 
 @catalog_route.get("/tax_types/")
 async def Get_Taxes(type: str = None , jwt_dependency: jwt_dependecy = None):

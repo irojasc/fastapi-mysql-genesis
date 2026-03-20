@@ -24,7 +24,15 @@ def get_ware_house():
         #     )
         # else:
         # dataUsrs = con.execute(select(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet).select_from(Ware.join(WareSet, Ware.c.warelvl == WareSet.c.lvl)))
-        data = session.query(Ware.c.id, Ware.c.code, Ware.c.isVirtual, Ware.c.enabled, WareSet, Ware.c.isPos, Ware.c.inv_allowed, Ware.c.inv_clean, Ware.c.inv_date).\
+        data = session.query(Ware.c.id, 
+                             Ware.c.code, 
+                             Ware.c.isVirtual, 
+                             Ware.c.enabled, 
+                             WareSet, 
+                             Ware.c.isPos, 
+                             Ware.c.inv_allowed, 
+                             Ware.c.inv_clean, 
+                             Ware.c.inv_date).\
         join(WareSet, Ware.c.warelvl == WareSet.c.lvl).\
         all()
         #get colums name of selected table with session sqlalchemy?
