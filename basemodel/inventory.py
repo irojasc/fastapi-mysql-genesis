@@ -21,6 +21,7 @@ class InOut_Qty(BaseModel):
     fromDate: Optional[str] = None
     toDate: Optional[str] = None
     isFinalState: Optional[bool] = None
+    level: Optional[int] = None
 
 
 #Esto es un modelo para el usuario(frond)

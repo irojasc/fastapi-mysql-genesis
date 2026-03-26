@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, desc, asc, or_, func, and_, null, literal, delete, insert, update
 from fastapi.encoders import jsonable_encoder
@@ -29,6 +29,8 @@ from routes.catalogs import Get_Taxes, Get_Time
 from decimal import Decimal
 import json
 from datetime import datetime
+from config.db import get_db
+from sqlalchemy.orm import Session
 
 inventory_route = APIRouter(
     prefix = '/inventory',
@@ -765,74 +767,145 @@ async def run_inventory_mode(input_param: ware_edited = None, jwt_dependency: jw
         return response
 
 @inventory_route.patch("/transfer/downgradestate", status_code=200)
-async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: jwt_dependecy = None):
+async def downgrade_transfer_state(invoice: InOut_Qty = False, jwt_dependency: jwt_dependecy = None, sessiono: Session = Depends(get_db)):
     # response model
     response = {
         "state": False,
         "result": [],
         "message": "",
-        "toDate": None
+        "toDate": None,
+        "doDelete": False,
+        "level": None,
+        "toUser": None
     }
+
     try:
         #HORA DE REGISTRO
         create_date = await Get_Time()
+        lima_ts = create_date["lima_transfer_format"]
 
+        #primero verifica que nadie lo haya tomado
+
+        transfer_data = sessiono.query(Transfer.c.state, Transfer.c.toUser).filter(Transfer.c.codeTS == invoice.codeTS).first()
+
+        if not transfer_data:
+            response["message"] = "Transferencia no encontrada"
+            response["doDelete"] = True
+            return response
+            #aqui devolver datos  ✅
+        
+        state_db, user_db = transfer_data
+
+        fecha_front = "-".join(lima_ts.split("-")[::-1])
+        
+        if state_db == 1: #si el estado ya llego a 1, no se puede realizar ningun cambio
+            response["message"] = "¡El traslado se encuentra cerrado!"
+            response["toUser"] = user_db
+            response["level"] = state_db
+            response["toDate"] = fecha_front
+
+            return response
+            #aqui devolver datos  ✅
+        
+        # Lógica de estados
+        is_final = invoice.isFinalState
+            
+        
         #si no es final state
-        if(not(invoice.isFinalState)):
+        # Caso A: No es estado final y nadie lo ha tomado
+        if not is_final and user_db is None:
             #solamente baja en uno el state
-            session.execute(update(Transfer).
+            sessiono.execute(update(Transfer).
                             where(Transfer.c.codeTS == invoice.codeTS).
                             values(state = Transfer.c.state - 1, 
                                    toUser= invoice.curUser))
-            session.commit()
-            response["state"] = True
-            response["message"] = f'Se actualizo Transfer con codigo {invoice.codeTS}'
-            response["result"] = False
-        else:
-            #baja en uno el state y actuliza las cantidades en ware_product
-            session.execute(update(Transfer).
-                            where(Transfer.c.codeTS == invoice.codeTS).
-                            values(state = Transfer.c.state - 1,
-                                    toDate = create_date["lima_transfer_format"]))
-            session.commit()
-            #actualiza las cantidades en ware_product
-            items_quantity = session.query(Transfer_Product.c.idProduct, Transfer_Product.c.qtyNew, Transfer_Product.c.qtyOld). \
-            filter(Transfer_Product.c.idTransfer == invoice.codeTS).all()
-            #id de toWare suqquery
-            id_toWare = session.query(Ware.c.id).filter(Ware.c.code == invoice.toWare).first()[0]
+            sessiono.commit()
+            response.update({"state": True, "message": f'Traslado atendido con codigo {invoice.codeTS}', "result": False}) # result False indica que bajo a nivel 2
+        
+        # Caso B: Ya está tomado por otro usuario (aplica para final y no final)
+        elif user_db != invoice.curUser and (is_final or user_db is not None):
+            response.update({
+                "state": True, 
+                "message": 
+                "¡El traslado está siendo atendido por otro usuario!", 
+                "result": None,
+                "toUser" : user_db,
+                "level": state_db
+                })
+            #aqui devolver datos ✅
+        
+        # Caso C: De que si sea el usuario pero ya esta en otro nivel
+        elif user_db == invoice.curUser and invoice.level != state_db:
+            response.update({
+                "state": True, 
+                "message": 
+                "¡El traslado se encuentra en otro estado de atención!", 
+                "result": None,
+                "toUser" : user_db,
+                "level": state_db
+                })
+            #aqui devolver datos ✅
 
-            params = list(map(lambda x: {
-                'qtyN': x[1],
-                'qtyO': x[2],
-                # 'editDa': invoice.toDate,
-                'editDa': create_date["lima_bd_format"] or None,
-                'idPro' : int(x[0]),
-                'idWa' : id_toWare}, items_quantity))
+        
+        elif is_final and user_db == invoice.curUser:
+            #baja en uno el state y actuliza las cantidades en ware_product
+            sessiono.execute(
+                            update(Transfer)
+                            .where(Transfer.c.codeTS == invoice.codeTS)
+                            .values(state = Transfer.c.state - 1, toDate = lima_ts)
+                            )
             
-            stmt = text(f"UPDATE ware_product set qtyNew = qtyNew + :qtyN, qtyOld = qtyOld + :qtyO, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
-            response_3 = session.execute(stmt, params)
-            session.commit()
+            # sessiono.commit()
+            #id de toWare suqquery
+            # id_toWare = sessiono.query(Ware.c.id).filter(Ware.c.code == invoice.toWare).first()[0]
+            id_toWare = sessiono.query(Ware.c.id).filter(Ware.c.code == invoice.toWare).scalar()
+
+            #actualiza las cantidades en ware_product
+            items_quantity = sessiono.query(
+                                Transfer_Product.c.idProduct, 
+                                Transfer_Product.c.qtyNew, 
+                                Transfer_Product.c.qtyOld
+                                ).filter(Transfer_Product.c.idTransfer == invoice.codeTS).all()
+
+            params = list(map(lambda item: {
+                'qtyN': item.qtyNew,
+                'qtyO': item.qtyOld,
+                'editDa': create_date["lima_bd_format"] or None,
+                'idPro' : int(item.idProduct),
+                'idWa' : id_toWare
+                }, items_quantity))
+            
+
+            stmt = text("""
+                        UPDATE ware_product 
+                        SET qtyNew = qtyNew + :qtyN, 
+                            qtyOld = qtyOld + :qtyO, 
+                            editDate = :editDa 
+                        WHERE idProduct = :idPro AND idWare = :idWa
+                        """)
+
+
+            response_3 = sessiono.execute(stmt, params)
+            sessiono.commit()
+
+
             if(response_3.rowcount > 0):
-                response["state"] = True
-                response["message"] = f'Se agregaron items con codigo {invoice.codeTS}'
-                response["result"] = True
-                partes = create_date["lima_transfer_format"].split("-") # <- split para cambiar el orden de la fecha
-                response["toDate"] = partes[2] + '-' + partes[1] + '-' + partes[0] #<- fecha requerida para frond
+
+                response.update({
+                    "state": True,
+                    "message": f'Se agregaron items con codigo {invoice.codeTS}',
+                    "result": True,
+                    "toDate": fecha_front
+                })
 
     except Exception as e:
+        sessiono.rollback()
         response["state"] = False
-        response["message"] = f"An error ocurred: {e}"
+        response["message"] = f"An error ocurred: {str(e)}"
 
-    except SQLAlchemyError as e:
-        print("roll")
-        session.rollback()
-        session.close()
-        response["state"] = False
-        response["message"] = f"An error ocurred: {e}"
-        
-    finally:
-        session.close()
-        return response
+    return response
+    
+
 
 @inventory_route.patch("/product/", status_code=200)
 async def update_warehouse_product(product_: ware_product_ = None, jwt_dependency: jwt_dependecy = None):

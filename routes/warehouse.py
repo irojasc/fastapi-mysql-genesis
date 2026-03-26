@@ -7,6 +7,7 @@ from sqlmodel.ware import Ware
 from sqlmodel.wareset import WareSet
 from config.db import get_db
 from sqlalchemy.orm import Session
+#from fastapi import APIRouter, HTTPException, Depends
 
 warehouse_route = APIRouter(
     prefix = '/warehouse',
@@ -14,7 +15,6 @@ warehouse_route = APIRouter(
 )
 
 @warehouse_route.get("/", status_code=200)
-# def get_ware_house(jwt_dependency: jwt_dependecy):
 def get_ware_house(session: Session = Depends(get_db)):
     returned = False
     try:
@@ -22,7 +22,7 @@ def get_ware_house(session: Session = Depends(get_db)):
                              Ware.c.code, 
                              Ware.c.isVirtual, 
                              Ware.c.enabled, 
-                             WareSet, 
+                             WareSet.c.locTooltip, 
                              Ware.c.isPos, 
                              Ware.c.inv_allowed, 
                              Ware.c.inv_clean, 
@@ -30,24 +30,24 @@ def get_ware_house(session: Session = Depends(get_db)):
         join(WareSet, Ware.c.warelvl == WareSet.c.lvl).\
         all()
         
-        result  = list(map(lambda x: {"id": x[0], 
-                                      "cod": x[1], 
-                                      "auth": {"isVirtual": x[2]!=b'\x00', 
-                                               "enabled": x[3]!=b'\x00', 
-                                               "locTooltip": x[5]!=b'\x00', 
-                                               "isPos": x[-4]!=b'\x00',
-                                               "inv_allowed": x[-3]!=b'\x00',
-                                               "inv_clean": x[-2]!=b'\x00',
-                                               "inv_date": x[-1] or None,
+        result  = list(map(lambda x: {"id": x.id, 
+                                      "cod": x.code, 
+                                      "auth": {"isVirtual": x.isVirtual != b'\x00', 
+                                               "enabled": x.enabled != b'\x00', 
+                                               "locTooltip": x.locTooltip != b'\x00', 
+                                               "isPos": x.isPos != b'\x00',
+                                               "inv_allowed": x.inv_allowed != b'\x00',
+                                               "inv_clean": x.inv_clean != b'\x00',
+                                               "inv_date": x.inv_date or None,
                                                }}, data))
         returned = {"result": result}
-    except Exception as e:
-        session.close()
-        print(f"get_ware_house:get:An error ocurred: {e}")
-    except SQLAlchemyError as e:
-        print("An SqlAlchemmy happened ", e)
-        session.close()
+
+    except SQLAlchemyError as e: # Primero la específica
         session.rollback()
-    finally:
-        session.close()
-        return returned
+        print(f"SQLAlchemy Error: {e}")
+        returned = {"result": [], "error": "Database error"}
+    except Exception as e: # Luego la general
+        print(f"General Error: {e}")
+        returned = {"result": [], "error": str(e)}
+    
+    return returned
