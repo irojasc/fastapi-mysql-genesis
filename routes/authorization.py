@@ -7,8 +7,9 @@ from sqlmodel.modules import Modules
 from sqlmodel.permissions import Permissions
 from sqlmodel.user_perm_mdl import User_perm_mdl
 from basemodel.authorization import auth_data
-from config.db import con, session
+from config.db import con, session, get_db
 from sqlmodel.ubigeo import Ubigeo
+from sqlalchemy.orm import Session
 
 authorization_route = APIRouter(
     prefix = '/authorization',
@@ -51,20 +52,44 @@ async def get_data_Auth_UI(jwt_dependency: jwt_dependecy, user:str=None):
         return not_matched_result
 
 @authorization_route.get("/user")
-async def get_user_permissions_by_module(jwt_dependency: jwt_dependecy = None, user:str=None, module:str=None):
+async def get_user_permissions_by_module(
+    jwt_dependency: jwt_dependecy = None, 
+    user:str=None, 
+    module:str=None,
+    sessionx: Session = Depends(get_db)
+    ):
     returned_value = []
     try:
-        if module is not None:
-            response = session.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user, User_perm_mdl.c.mdlCode == module).all()
-        else:
-            response = session.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user).all()
-        session.close()
-        returned_value = list(map(lambda x: x[0], response))
+        # if module is not None:
+        #     response = sessionx.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user, User_perm_mdl.c.mdlCode == module).all()
+        # else:
+        #     response = sessionx.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user).all()
+        # sessionx.close()
+        # returned_value = list(map(lambda x: x[0], response))
+
+        # Construimos la consulta base
+        query = sessionx.query(User_perm_mdl.c.permCode).filter(User_perm_mdl.c.user == user)
+        
+        # Filtramos por módulo si es proporcionado
+        if module:
+            query = query.filter(User_perm_mdl.c.mdlCode == module)
+            
+        response = query.all()
+        
+        # Transformamos la respuesta (aplanamos la lista de tuplas)
+        return [row[0] for row in response]
+
     except Exception as e:
-        session.rollback()
-        returned_value = []
-    finally:
-        return returned_value
+        # Si algo falla, registramos el error y aseguramos que la sesión esté limpia
+        print(f"Error en permisos: {e}")
+        sessionx.rollback()
+        return []
+    
+    # except Exception as e:
+    #     sessionx.rollback()
+    #     returned_value = []
+    # finally:
+    #     return returned_value
 
 @authorization_route.patch("/user")
 async def update_user_permissions(jwt_dependency: jwt_dependecy, auth_data_changed:auth_data):

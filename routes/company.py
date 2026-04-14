@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, asc, func, insert, and_, or_, update
 from sqlalchemy.dialects.mysql import insert as insert_dialect
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session
+from config.db import con, session, get_db
 from sqlmodel.company import Company
 from sqlmodel.banks import Banks
 from sqlmodel.paymentterms import PaymentTerms
@@ -20,6 +20,7 @@ from service.company import get_partner_by_ruc_dni # consume servicio de reniec 
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
 from datetime import datetime
+from sqlalchemy.orm import Session
 import httpx
 import json
 
@@ -501,7 +502,11 @@ async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=Non
         return returned
     
 @company_route.get("/lastchanges", status_code=200)
-async def Get_Last_Company(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), jwt_dependency: jwt_dependecy = None):
+async def Get_Last_Company(
+    last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), 
+    jwt_dependency: jwt_dependecy = None,
+    sessionx:Session=Depends(get_db)
+    ):
     try:
         #convertir el last_sync
         formated_lastsync = normalize_last_sync(last_sync) #resta 5 minutos para traer todos los cambios
@@ -517,17 +522,18 @@ async def Get_Last_Company(last_sync: datetime = Query(..., description="Formato
             .order_by(asc(Company.c.docName))
         )
 
-        results = session.execute(stmt).mappings().all() #obtine en formato diccionario
+        results = sessionx.execute(stmt).mappings().all() #obtine en formato diccionario
         returned = list(map(get_all_companies,results))
         utc_time = await Get_Time() #consulta hora actual del sistema
         # print('Consulta proveedores: Hora Lima: ', utc_time["lima"])
-        returned = {"last_sync": utc_time["lima"], "partners" : returned}
+        return {"last_sync": utc_time["lima"], "partners" : returned}
 
     except Exception as e:
         print("rollback")
-        session.rollback()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
-        returned = {}
-    finally:
-        session.close()
-        return returned
+        return {}
+        # returned = {}
+    # finally:
+    #     session.close()
+    #     return returned

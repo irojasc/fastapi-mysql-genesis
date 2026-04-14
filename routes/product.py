@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, func, insert, update
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session, CREDENTIALS_JSON, BUCKET_NAME, AWS_REGION
+from config.db import con, session, CREDENTIALS_JSON, BUCKET_NAME, AWS_REGION, get_db
 from config.s3_aws import get_s3_client
 from sqlmodel.product import Product
 from sqlmodel.uploads import Uploads
@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from routes.authorization import get_user_permissions_by_module
 from fastapi import Response
 from routes.catalogs import Get_Time
+from sqlalchemy.orm import Session
 from botocore.exceptions import (
     NoCredentialsError,
     PartialCredentialsError,
@@ -226,7 +227,12 @@ async def delete_product(jwt_dependency: jwt_dependecy, idProduct: str = None, c
     
 
 @product_route.get("/getlastimage", description="Obtiene imagen de producto desde bucket s3 con el codigo interno del producto seguido de la extension del formato")
-async def obtener_imagen(jwt_dependency: jwt_dependecy, body: product_basic_model = Depends(), s3 = Depends(get_s3_client)):
+async def obtener_imagen(
+    jwt_dependency: jwt_dependecy, 
+    body: product_basic_model = Depends(), 
+    s3 = Depends(get_s3_client), 
+    sessionx: Session = Depends(get_db)
+    ):
     status_code = 422
     returned_value = {
         "message": "error",
@@ -241,15 +247,18 @@ async def obtener_imagen(jwt_dependency: jwt_dependecy, body: product_basic_mode
         else:
             stmt = (select(Product.c.FileName)
                     .filter(Product.c.id == int(body.DocEntry)))
-            obj = session.execute(stmt).mappings().first()
+            obj = sessionx.execute(stmt).mappings().first()
             
-            if obj["FileName"]:
+            if obj and obj["FileName"]:
+                obj_file_name = obj["FileName"]
+
                 # CASO 1: EXISTE EN DB PERO NO EN REMOTO ó EXISTE EN DB Y ARCHIVO REMOTO DIFERENTE
-                if not(body.FileName) or (obj["FileName"] != body.FileName): #RPTA: TRAE LA URL DESDE S3
+                if not body.FileName or (obj_file_name != body.FileName): #RPTA: TRAE LA URL DESDE S3
 
                     # inicia verificacion de existencia
                     try:
-                        s3.head_object(Bucket=BUCKET_NAME, Key=obj["FileName"])
+                        # s3.head_object(Bucket=BUCKET_NAME, Key=obj["FileName"])
+                        s3.head_object(Bucket=BUCKET_NAME, Key=obj_file_name)
                     except ClientError:
                         raise HTTPException(status_code=404, detail="Archivo no existe en S3")
                     # culmina verificacion de existencia
@@ -265,7 +274,7 @@ async def obtener_imagen(jwt_dependency: jwt_dependecy, body: product_basic_mode
                                             }   
                                         )
                 
-                elif (obj["FileName"] == body.FileName):
+                elif (obj_file_name == body.FileName):
                     status_code = 200
                     returned_value.update(
                                             {
@@ -297,21 +306,24 @@ async def obtener_imagen(jwt_dependency: jwt_dependecy, body: product_basic_mode
                                         }
                                        )
 
-    except Exception as e:
-        session.rollback()
-        session.close()
-        raise HTTPException(status_code=404, detail="Error al descargar de S3")
+    except HTTPException as he:
+        raise he
     
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code= status_code,
-            content= returned_value
-        )
+    except Exception as e:
+        print(f"Error: {e}") 
+        raise HTTPException(status_code=404, detail="Error interno del servidor")
+    
+    return JSONResponse(status_code=status_code, content=returned_value)
     
 
 @product_route.get("/uploads/presign", description="Optine url prefirmada para carga ", status_code=200)
-async def obtener_url_prefirmada_para_actualizacion(payload: jwt_dependecy, body: product_basic_model = Depends(), s3 = Depends(get_s3_client)):
+async def obtener_url_prefirmada_para_actualizacion(
+        payload: jwt_dependecy, 
+        body: product_basic_model = Depends(), 
+        s3 = Depends(get_s3_client),
+        sessionx: Session = Depends(get_db)
+        ):
+    
     status_code = 422
     returned_value = {
         "message": "Indeterminado",
@@ -321,18 +333,21 @@ async def obtener_url_prefirmada_para_actualizacion(payload: jwt_dependecy, body
 
     try:
 
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='IVT')
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='IVT', sessionx=sessionx)
 
         if isinstance(permisos, list) and 'IVT_UIM' not in permisos: #APRUEBA PERMISO IVT_UIM: permiso para actualizar imagen
             raise RuntimeError("No cuenta con permisos para actualizar imagenes")
 
 
         # 0| CONSULTA NOMBRE ACTUAL DE ARCHIVO
-        Result = session.execute(select(Product.c.FileName).filter(Product.c.id == body.DocEntry)).mappings().first()
+        Result = sessionx.execute(select(Product.c.FileName).filter(Product.c.id == body.DocEntry)).mappings().first()
 
 
         # 1| GENERACION DE NOMBRE DE ARCHIVO CON EXTENSION SEGUN EL CONTENT TYPE
-        FileName = generate_filename(numero=body.DocEntry, extension=body.ContentType, valor_inicial=Result['FileName'] if 'FileName' in Result else None)
+        # FileName = generate_filename(numero=body.DocEntry, extension=body.ContentType, valor_inicial=Result['FileName'] if 'FileName' in Result else None)
+        # Result['FileName'] if 'FileName' in Result else None
+        prev_filename = Result['FileName'] if Result and 'FileName' in Result else None
+        FileName = generate_filename(numero=body.DocEntry, extension=body.ContentType, valor_inicial=prev_filename)
 
         if FileName: #verifica que existe nombre filename
 
@@ -375,22 +390,23 @@ async def obtener_url_prefirmada_para_actualizacion(payload: jwt_dependecy, body
                         )
                 )
 
-                affected = session.execute(stmt)
+                affected = sessionx.execute(stmt)
 
                 if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅, EMPIEZA CON REGISTRO DE LINEAS HIJAS
                     Uuid = affected.inserted_primary_key[0]
-                    session.commit()
+                    sessionx.commit()
 
+                    status_code = 200
                     returned_value.update({
                         "message": "ok",
                         "data": {
-                            "prev_filename": Result['FileName'],
+                            # "prev_filename": Result['FileName'],
+                            "prev_filename": prev_filename,
                             "new_filename": FileName,
                             "UploadEntry": Uuid,
                             "ContentType": content_type
                         }
                     })
-                    status_code = 200
         
     except (
         NoCredentialsError,
@@ -398,29 +414,30 @@ async def obtener_url_prefirmada_para_actualizacion(payload: jwt_dependecy, body
         ParamValidationError,
         ClientError
     ) as e:
+        sessionx.rollback()
         returned_value.update({"message": f"Failed to generate presigned URL: {e}"})
         status_code = 422
-        session.close()
-        session.rollback()
         
     except Exception as e:
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value.update({
-            "message": f"{e}"
+            "message": str(e)
         })
         status_code = 422
-
     
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code= status_code,
-            content= returned_value
-        )
+    return JSONResponse(
+        status_code= status_code,
+        content= returned_value
+    )
 
 @product_route.post("/uploads/confirm", description="confirma carga de archivos desde el frondend para objeto de tipo producto", status_code=200)
-async def confirmar_archivo_de_producto(payload: jwt_dependecy, body: product_basic_model, s3 = Depends(get_s3_client)):
+async def confirmar_archivo_de_producto(
+    payload: jwt_dependecy, 
+    body: product_basic_model, 
+    s3 = Depends(get_s3_client),
+    sessionx: Session = Depends(get_db)
+    ):
+
     status_code = 422
     returned_value = {
         "message": "Indeterminado",
@@ -431,23 +448,25 @@ async def confirmar_archivo_de_producto(payload: jwt_dependecy, body: product_ba
     try:
         #0| CAMBIA DE ESTADO PENDING TO CLOSE
         date = await Get_Time() #<-- obtiene hora
+        current_time = date["lima_bd_format"]
         
         stmt = (update(Uploads)
                 .where(Uploads.c.Uuid == body.UploadEntry)
                 .values(
                 Status=body.ConfirmStatus or None,
-                LastDate=date["lima_bd_format"],
+                LastDate=current_time,
                 )
             )
         # Ejecutar la instrucción de actualización
-        result = session.execute(stmt)
+        result = sessionx.execute(stmt)
         
         if result.rowcount == 0 or body.ConfirmStatus not in ('C', 'P'): #no afecta ninguna fila o es failed
-            session.rollback()
+            # sessionx.rollback()
             returned_value.update({"message": "Error actualizando tabla upload o error durante carga a bucket de imagenes"})
-            raise RuntimeError("Error actualizando tabla upload o error durante carga a bucket de imagenes")
+            raise ValueError("Error actualizando tabla upload o estado inválido")
+            # raise RuntimeError("Error actualizando tabla upload o error durante carga a bucket de imagenes") #esto emite un error 500
         
-        session.commit()
+        # sessionx.commit()
 
         #2| AGREGA FILA EN MANEJO DE VERSIONES DE DOCUMENTOS DE OBJECTO
         #2.1| DESACTIVA VERSIONES ANTERIORES
@@ -461,11 +480,11 @@ async def confirmar_archivo_de_producto(payload: jwt_dependecy, body: product_ba
             )
             .values(
                 IsActive='N',
-                LastDate=date["lima_bd_format"]
+                LastDate=current_time
             )
         )
-        session.execute(stmt_deactivate)
-        session.commit()
+        sessionx.execute(stmt_deactivate)
+        # sessionx.commit()
 
         #2.2| ACTIVA VERSION RECIENTE
         stmt = (insert(ObjectFiles).
@@ -475,50 +494,61 @@ async def confirmar_archivo_de_producto(payload: jwt_dependecy, body: product_ba
                     UploadEntry= body.UploadEntry,
                     FileRole= body.FileRole, #IM: IMAGEN, FT: FICHA TECNICA, LG: LOGO, AV:AVATAR, MN: MANUAL, CT: CERTIFICADO
                     IsActive= 'Y',
-                    LastDate= date["lima_bd_format"]
+                    LastDate= current_time
                 )
         )
 
         # Ejecutar la instrucción de actualización
-        result_1 = session.execute(stmt)
+        result_1 = sessionx.execute(stmt)
 
         if result_1.rowcount == 0: #no afecta ninguna fila o es failed
-            session.rollback()
+            # sessionx.rollback()
             returned_value.update({"message": "Error actualizando tabla de control de versiones ojectfile, no se agrego filas"})
-            raise RuntimeError("Error actualizando tabla de control de versiones ojectfile, no se agrego filas")
+            raise ValueError("Error al registrar control de versiones (ObjectFiles)")
+            # raise RuntimeError("Error actualizando tabla de control de versiones ojectfile, no se agrego filas")
 
-        session.commit()
+        # sessionx.commit()
 
         #3| ACTUALIZA EL NOMBRE DEL ARCHIVO EN TABLA MAESTRA
-        new_fileName=session.execute(select(Uploads.c.FileName).filter(Uploads.c.Uuid == body.UploadEntry)).mappings().first()
+        new_fileName=sessionx.execute(select(Uploads.c.FileName).filter(Uploads.c.Uuid == body.UploadEntry)).mappings().first()
         
+        target_name = new_fileName["FileName"] if new_fileName else 'error'
+
         stmt_update = (
             update(Product)
             .where(
                 Product.c.id  == body.DocEntry,
             )
             .values(
-                FileName= 'error' if not new_fileName else new_fileName["FileName"],
-                editDate=date["lima_bd_format"]
+                # FileName= 'error' if not new_fileName else new_fileName["FileName"],
+                FileName= target_name,
+                editDate=current_time
             )
         )
-        result = session.execute(stmt_update)
+        result = sessionx.execute(stmt_update)
         
         if result.rowcount == 0: #no afecta ninguna fila o es failed
-            session.rollback()
+            # sessionx.rollback()
             returned_value.update({"message": "Error durante actualizacion de dato FileName en tabla maestra ITEM"})
-            raise RuntimeError("Error durante actualizacion de dato FileName en tabla maestra ITEM")
+            raise ValueError("Error al actualizar FileName en tabla maestra ITEM")
+            # raise RuntimeError("Error durante actualizacion de dato FileName en tabla maestra ITEM")
         
-        session.commit()
-        status_code = 200
-        returned_value.update({"message": "ok!"})
+        sessionx.commit()
 
         #3| ELIMINA VERSION ANTIGUA DE BUCKET SI EXISTE
         if body.prevFileName: #en caso existe archivo antiguo, elimina
-            s3.delete_object(
-                Bucket=BUCKET_NAME,
-                Key=body.prevFileName
-            )
+            try:
+                s3.delete_object(
+                    Bucket=BUCKET_NAME,
+                    Key=body.prevFileName
+                )
+            except Exception as e:
+                # Opcional: Solo loguear si falla el delete en S3 para no romper el proceso de DB ya exitoso
+                print(f"Aviso: No se pudo eliminar el archivo antiguo en S3: {e}")
+
+
+        status_code = 200
+        returned_value.update({"message": "ok!"})
 
     except (
         NoCredentialsError,
@@ -526,25 +556,25 @@ async def confirmar_archivo_de_producto(payload: jwt_dependecy, body: product_ba
         ParamValidationError,
         ClientError
     ) as e:
-        returned_value.update({"message": f"Error intentando eliminar la version anterior: {e}"})
+        returned_value.update({"message": f"Error intentando eliminar la version anterior: {str(e)}"})
+        sessionx.rollback()
         status_code = 422
-        session.close()
-        session.rollback()
+        # sessionx.close()
 
     except Exception as e:
-        session.rollback()
-        session.close()
+        sessionx.rollback()
+        # sessionx.close()
         returned_value.update({
-            "message": f"An error ocurred: {e}"
+            "message": f"An error ocurred: {str(e)}"
         })
         status_code = 422
 
+    return JSONResponse(
+        status_code= status_code,
+        content= returned_value
+    )
     
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code= status_code,
-            content= returned_value
-        )
+    # finally:
+        # sessionx.close()
 
         
