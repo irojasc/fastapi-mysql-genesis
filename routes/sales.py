@@ -25,11 +25,12 @@ from functions.sales import generar_ticket, build_body_ticket, generar_ticket_cl
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
-from config.db import con, session, MIFACT_MIRUC
+from config.db import con, session, MIFACT_MIRUC, get_db
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
 from service.sales import post_sales_document, cancel_sales_document, check_sales_document_file
+from sqlalchemy.orm import Session
 import httpx
 import json
 
@@ -181,7 +182,12 @@ async def Get_Sales_Order_By_CashRegisterCode(cash_register_body: cash_register 
     
 
 @sales_route.get("/get_sales_order_by_ware_and_date/", status_code=200)
-async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = Depends(), payload: jwt_dependecy = None):
+async def Get_Sales_Order_By_Ware_And_Date(
+        cash_register_body: sales_request = Depends(), 
+        payload: jwt_dependecy = None,
+        sessionx: Session = Depends(get_db)        
+        ):
+    #session
     returned_value = {}
     date_current = cash_register_body.Date
     date_bottom = None
@@ -190,11 +196,11 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
     try:
         
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         
         if isinstance(permisos, list) and 'SLS_ASR' in permisos: #APRUEBA PERMISO SLS_ASR
             
-            if isinstance(permisos, list) and 'SLS_WDY' in permisos: #APRUEBA PERMISO SLS_WDY, PARA VER TODOS LOS REGISTROS
+            if 'SLS_WDY' in permisos: #APRUEBA PERMISO SLS_WDY, PARA VER TODOS LOS REGISTROS
                 start_date = dt.strptime(cash_register_body.Date, "%Y-%m-%d")
                 end_date = start_date + timedelta(days=1)
             else:
@@ -224,7 +230,6 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                     return date_top.strftime("%Y-%m-%d"), date_bottom.strftime("%Y-%m-%d"), current_date.strftime("%Y-%m-%d")
                 
                 date_top, date_bottom, date_current  = await validate_date_range(input_date_str = cash_register_body.Date)
-                
                 # date_current = date_bottom
                 start_date = dt.strptime(date_current, "%Y-%m-%d")
                 end_date = start_date + timedelta(days=1)
@@ -238,7 +243,7 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                 while num > 0:
                     num, i = divmod(num, 36)
                     base36 = chars[i] + base36
-                return base36
+                return base36 or "0"
 
             #FUNCIONA PARA DAR FORMATO CABECERA / DETALLE
             def build_sales_response(ventas):
@@ -306,7 +311,7 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
                     .order_by(desc(SalesOrder.c.DocDate))
                     )
 
-            returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
+            returned_value = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
 
             returned_value = build_sales_response(returned_value)
             
@@ -336,25 +341,22 @@ async def Get_Sales_Order_By_Ware_And_Date(cash_register_body: sales_request = D
 
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
+        
+    return returned_value
+    
 
-    finally:
-        session.close()
-        return returned_value
 
 @sales_route.get("/get_detail_sales_order/", status_code=200)
 async def Get_Detail_Sales_Order(cash_register_body: sales_request = Depends(), payload: jwt_dependecy = None):

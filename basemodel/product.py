@@ -1,4 +1,3 @@
-import re
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict
 
@@ -37,7 +36,7 @@ class ware_product_(BaseModel):
     autor: str
     publisher: Optional[str] = None
     # content: Optional[str] = None
-    content: str = Field(None, max_length=1200)
+    content: Optional[str] = Field(None, max_length=1200)
     dateOut: Optional[str] = None
     idCategory: Optional[List[Dict]] = Field(default_factory=list)
     idLanguage: Optional[List[Dict]] = Field(default_factory=list)
@@ -63,7 +62,8 @@ class ware_product_(BaseModel):
 
     @validator('content')
     def clean_content(cls, v):
-        if v:
+        if v is not None:
+            import re
             # 1. Elimina espacios al inicio y final
             v = v.strip()
             # 2. Reemplaza Tabs (\t) por un espacio simple

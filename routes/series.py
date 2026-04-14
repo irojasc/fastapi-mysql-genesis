@@ -11,10 +11,11 @@ from functions.sales import generar_ticket, build_body_ticket, generar_ticket_cl
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
-from config.db import con, session
+from config.db import con, session, get_db
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
+from sqlalchemy.orm import Session
 
 series_route = APIRouter(
     prefix = '/series',
@@ -22,7 +23,14 @@ series_route = APIRouter(
 )
 
 @series_route.get("/get_series_data_by_ware/", status_code=200)
-async def Get_Series_Data_By_Ware(series_body: series_request = Depends(), payload: jwt_dependecy = None):
+async def Get_Series_Data_By_Ware(
+    series_body: series_request = Depends(), 
+    payload: jwt_dependecy = None,
+    sessionx:Session=Depends(get_db)
+    ):
+
+    #session
+
     returned_value = {}
     try:
 
@@ -58,7 +66,7 @@ async def Get_Series_Data_By_Ware(series_body: series_request = Depends(), paylo
             return transformed
             
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         
         if isinstance(permisos, list) and 'SLS_SLD' in permisos: #VERIFICA PERMISO VER SERIES
        
@@ -71,7 +79,7 @@ async def Get_Series_Data_By_Ware(series_body: series_request = Depends(), paylo
                     .order_by(desc(DocSeries.c.SeriesCode))
                     )
 
-            returned_list = [dict(r) for r in session.execute(stmt).mappings().all()]
+            returned_list = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
 
             returned_list = transform_series_list(returned_list)
             
@@ -91,25 +99,20 @@ async def Get_Series_Data_By_Ware(series_body: series_request = Depends(), paylo
 
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
-        returned_value = []
+        sessionx.rollback()
+        return []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
-        returned_value = []
+        sessionx.rollback()
+        return []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
-        returned_value = []
+        sessionx.rollback()
+        return []
 
-    finally:
-        session.close()
-        return returned_value
+    return returned_value
 
 @series_route.get("/get_series_by_code/", status_code=200)
 async def Get_Series_By_Code(series_body: series_request = Depends(), payload: jwt_dependecy = None):
