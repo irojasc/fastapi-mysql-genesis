@@ -203,7 +203,6 @@ async def Get_WareHouse_Product_By_Id(
                 'VatBuy': None, 'VatSell': None
             }
 
-
         
         else: #CASO 2| EDITAR ARTICULO EXISTENTE
             stmt = (

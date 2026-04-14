@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict
 
 # Define a Pydantic model
@@ -35,7 +36,8 @@ class ware_product_(BaseModel):
     title: str
     autor: str
     publisher: Optional[str] = None
-    content: Optional[str] = None
+    # content: Optional[str] = None
+    content: str = Field(None, max_length=1200)
     dateOut: Optional[str] = None
     idCategory: Optional[List[Dict]] = Field(default_factory=list)
     idLanguage: Optional[List[Dict]] = Field(default_factory=list)
@@ -58,6 +60,21 @@ class ware_product_(BaseModel):
     InvntryUom: Optional[str] =  'NIU'
     VatBuy: Optional[str] = None
     VatSell: Optional[str] = None
+
+    @validator('content')
+    def clean_content(cls, v):
+        if v:
+            # 1. Elimina espacios al inicio y final
+            v = v.strip()
+            # 2. Reemplaza Tabs (\t) por un espacio simple
+            v = v.replace('\t', ' ')
+            # 3. Reduce múltiples saltos de línea a máximo dos (para párrafos)
+            v = re.sub(r'\n\s*\n', '\n\n', v)
+            # 4. Opcional: Reduce múltiples espacios seguidos a uno solo
+            v = re.sub(r' +', ' ', v)
+            
+            return v
+        return v
 
 
 class product_basic_model(BaseModel):

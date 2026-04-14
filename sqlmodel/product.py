@@ -1,4 +1,4 @@
-from sqlalchemy import Table, Column, text
+from sqlalchemy import Table, Column, text, Text
 from sqlalchemy.sql.sqltypes import Integer, String, Date, _Binary, DECIMAL, DateTime
 from config.db import meta, engine
 
@@ -9,7 +9,7 @@ Product = Table("product", meta,
                 Column("title", String(90), nullable=False), 
                 Column("autor", String(45), nullable=False), 
                 Column("publisher", String(90), nullable=False),
-                Column("content", String(800), default=None), 
+                Column("content", Text, nullable=True, default=None), 
                 Column("dateOut", Date, default=None), 
                 Column("idLanguage", Integer, default=None),
                 Column("pages", Integer, default=None),
