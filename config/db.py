@@ -12,7 +12,7 @@ engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
     os.getenv("DB_DATABASE", default=None),
         ),
     pool_pre_ping= True,
-    #lo de arriba para conocer el background de sql
+    pool_recycle=3600,
     )
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

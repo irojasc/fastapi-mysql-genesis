@@ -72,6 +72,10 @@ class ware_product_(BaseModel):
             v = re.sub(r'\n\s*\n', '\n\n', v)
             # 4. Opcional: Reduce múltiples espacios seguidos a uno solo
             v = re.sub(r' +', ' ', v)
+
+            # Opcional: eliminar caracteres de control invisibles 
+            # que a veces vienen al copiar de PDFs
+            v = "".join(char for char in v if char.isprintable() or char in "\n\r")
             
             return v
         return v
