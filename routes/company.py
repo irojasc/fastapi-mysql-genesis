@@ -33,13 +33,18 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.http_client
 
 @company_route.get("/business_partner/", status_code=200)
-async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jwt_dependecy = None):
+async def Get_Business_Partner_By_CardCode(
+        CardCode:str=None, 
+        jwt_dependency: jwt_dependecy = None,
+        sessionx:Session = Depends(get_db)
+        ):
     """La parte de obtener Business partner por CardCode no esta desarrollada"""
     returnedValue = {"body": {}, "message": "ok"}
     status_code = 200
+    #session
     try:
         if CardCode is not None:
-            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS')
+            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS', sessionx=sessionx)
         
             if isinstance(permisos, list) and 'SLS_EBP' in permisos: #APRUEBA PERMISO SLS_ASR
                 stmt = (
@@ -71,7 +76,7 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
                     .join(CompanyContacts, Company.c.cardCode == CompanyContacts.c.cardCode, isouter=True)
                     .where(Company.c.cardCode == CardCode)
                 )
-                importado = session.execute(stmt).mappings().all()
+                importado = sessionx.execute(stmt).mappings().all()
 
                 if len(importado):
 
@@ -100,21 +105,21 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
                 returnedValue = {"body": {}, "message": "No tiene permiso para editar cliente"}
 
         else:
-            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS')
+            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS', sessionx=sessionx)
         
             if isinstance(permisos, list) and 'SLS_NBP' in permisos: #APRUEBA PERMISO SLS_ASR
                 #Consulta bancos
-                banks = session.query(Banks.c.BankCodeApi, Banks.c.BankName) \
+                banks = sessionx.query(Banks.c.BankCodeApi, Banks.c.BankName) \
                 .order_by(Banks.c.BankName.asc()) \
                 .all()
 
                 #Consulta terminos de pago
-                paymentterms = session.query(PaymentTerms.c.TermCode, PaymentTerms.c.TermName) \
+                paymentterms = sessionx.query(PaymentTerms.c.TermCode, PaymentTerms.c.TermName) \
                 .order_by(PaymentTerms.c.TermName.asc()) \
                 .all()
 
                 #Consulta monedas
-                currency = session.query(OCUR.c.CurrCode, OCUR.c.CurrName) \
+                currency = sessionx.query(OCUR.c.CurrCode, OCUR.c.CurrName) \
                 .all()
 
                 returnedValue.update({"body":{
@@ -146,16 +151,15 @@ async def Get_Business_Partner_By_CardCode(CardCode:str=None, jwt_dependency: jw
 
 
     except Exception as e:
-        session.rollback()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
         returnedValue.update({"message": f"An error ocurred: {e}"})
         status_code=422,
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code=status_code,
-            content=returnedValue
-        )
+
+    return JSONResponse(
+        status_code=status_code,
+        content=returnedValue
+    )
 
 # docName = BusinessPartner.nombre or None, # no se cambia 🎃
 # type = BusinessPartner.tipo_socio or None, # no cambia type

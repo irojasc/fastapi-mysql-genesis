@@ -115,12 +115,18 @@ async def Get_Series_Data_By_Ware(
     return returned_value
 
 @series_route.get("/get_series_by_code/", status_code=200)
-async def Get_Series_By_Code(series_body: series_request = Depends(), payload: jwt_dependecy = None):
+async def Get_Series_By_Code(
+    series_body: series_request = Depends(), 
+    payload: jwt_dependecy = None,
+    sessionx: Session = Depends(get_db)
+    ):
+
+    #session
     
     status_code = 200
     returned_value = {}
     try:
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
 
         if series_body.SeriesCode is None and isinstance(permisos, list) and 'SLS_CSR' in permisos: #Modo crear
             #consulta tipos de documento
@@ -129,7 +135,7 @@ async def Get_Series_By_Code(series_body: series_request = Depends(), payload: j
                             DocType.c.DocTypeName.label("name")
                            )
                     )
-            doctype_list = [dict(r) for r in session.execute(stmt).mappings().all()]
+            doctype_list = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
             
             #consulta tipos de documento
             stmt = (select( 
@@ -138,7 +144,7 @@ async def Get_Series_By_Code(series_body: series_request = Depends(), payload: j
                            )
                     .filter(Ware.c.enabled == 1, Ware.c.isPos == 1) #tiene que esta habilitado y ser pos
                     )
-            wares_list = [dict(r) for r in session.execute(stmt).mappings().all()]
+            wares_list = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
             
 
             init = {
@@ -180,7 +186,7 @@ async def Get_Series_By_Code(series_body: series_request = Depends(), payload: j
             #consulta datos serie
             stmt = (select(DocSeries).filter(DocSeries.c.SeriesCode == series_body.SeriesCode))
 
-            serie = session.execute(stmt).mappings().first()
+            serie = sessionx.execute(stmt).mappings().first()
 
             if serie: #existe la serie
 
@@ -191,7 +197,7 @@ async def Get_Series_By_Code(series_body: series_request = Depends(), payload: j
                                 DocType.c.DocTypeName.label("name")
                             )
                         )
-                doctype_list = [dict(r) for r in session.execute(stmt).mappings().all()]
+                doctype_list = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
                 
                 #consulta almacenes
                 stmt = (select( 
@@ -200,7 +206,7 @@ async def Get_Series_By_Code(series_body: series_request = Depends(), payload: j
                             )
                         .filter(Ware.c.enabled == 1, Ware.c.isPos == 1) #tiene que esta habilitado y ser pos
                         )
-                wares_list = [dict(r) for r in session.execute(stmt).mappings().all()]
+                wares_list = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
                 
 
                 init = {
@@ -260,36 +266,35 @@ async def Get_Series_By_Code(series_body: series_request = Depends(), payload: j
 
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code=status_code,
-            content= returned_value
-            )
+    return JSONResponse(
+        status_code=status_code,
+        content= returned_value
+        )
 
 @series_route.post("/create_new_serie/", status_code=201)
-async def Create_Serie(series_body: series_create_request, payload: jwt_dependecy = None):
+async def Create_Serie(
+    series_body: series_create_request, 
+    payload: jwt_dependecy = None,
+    sessionx: Session = Depends(get_db)
+    ):
     status_code = 201
     returned_value = {}
     try:
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
-
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        #session
         if isinstance(permisos, list) and 'SLS_CSR' in permisos: #Modo crear
             
             async def create_serie(body_x: series_create_request = None, user=None):
@@ -321,16 +326,15 @@ async def Create_Serie(series_body: series_create_request, payload: jwt_dependec
                             )
                         )
                 
-                affected = session.execute(stmt)
+                affected = sessionx.execute(stmt)
 
                 if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅, EMPIEZA CON REGISTRO DE LINEAS HIJAS
-                    session.commit() #AQUI TERMINA TODO CON UN COMMIT 🎭🎭🎭
+                    sessionx.commit() #AQUI TERMINA TODO CON UN COMMIT 🎭🎭🎭
                     
-                    stmt = (select(DocSeries).filter(DocSeries.c.SeriesCode == body_x.codigo))
+                    result = sessionx.execute(select(DocSeries).filter(DocSeries.c.SeriesCode == body_x.codigo)).mappings().first()
                     
-                    serie = dict(session.execute(stmt).mappings().first())
+                    serie = dict(result) if result else {}
 
-                    session.close()
 
                     for key, value in serie.items():
                         if isinstance(value, dt):
@@ -358,7 +362,7 @@ async def Create_Serie(series_body: series_create_request, payload: jwt_dependec
                             DocSeries.c.DocTypeCode == series_body.tipoDoc) #tipo documento
                         )
                     )
-            serie = session.execute(stmt).mappings().all()
+            serie = sessionx.execute(stmt).mappings().all()
 
             if series_body.estado == 'Active':
 
@@ -411,36 +415,34 @@ async def Create_Serie(series_body: series_create_request, payload: jwt_dependec
 
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code=status_code,
-            content= returned_value
-            )
+    return JSONResponse(
+        status_code=status_code,
+        content= returned_value
+        )
 
 @series_route.patch("/edit_serie_by_code/", status_code=200)
-async def Edit_Serie_By_Code(series_body: series_create_request, payload: jwt_dependecy = None):
+async def Edit_Serie_By_Code(
+    series_body: series_create_request, 
+    payload: jwt_dependecy = None,
+    sessionx:Session=Depends(get_db)):
     status_code = 200
     returned_value = {}
     try:
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
-
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        #session
         if isinstance(permisos, list) and 'SLS_ESR' in permisos: #Modo editar
             
             async def edit_serie(body_x: series_create_request = None, user=None):
@@ -473,16 +475,15 @@ async def Edit_Serie_By_Code(series_body: series_create_request, payload: jwt_de
                             )
                         )
                 
-                affected = session.execute(stmt)
+                affected = sessionx.execute(stmt)
 
                 if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅, EMPIEZA CON REGISTRO DE LINEAS HIJAS
-                    session.commit() #AQUI TERMINA TODO CON UN COMMIT 🎭🎭🎭
+                    sessionx.commit() #AQUI TERMINA TODO CON UN COMMIT 🎭🎭🎭
                     
                     stmt = (select(DocSeries).filter(DocSeries.c.SeriesCode == body_x.codigo))
                     
-                    serie = dict(session.execute(stmt).mappings().first())
+                    serie = dict(sessionx.execute(stmt).mappings().first())
 
-                    session.close()
 
                     for key, value in serie.items():
                         if isinstance(value, dt):
@@ -511,7 +512,7 @@ async def Edit_Serie_By_Code(series_body: series_create_request, payload: jwt_de
                                 )
                         )
                 
-                serie = session.execute(stmt).mappings().first()
+                serie = sessionx.execute(stmt).mappings().first()
 
                 if serie: #ya existe una serie con status activo, asi que no se puede cambiar
                     
@@ -560,33 +561,38 @@ async def Edit_Serie_By_Code(series_body: series_create_request, payload: jwt_de
 
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
-    finally:
-        session.close()
+    return JSONResponse(
+        status_code=status_code,
+        content= returned_value
+        )
 
     
 @series_route.delete("/delete_series_by_code/", status_code=200)
-async def Delete_Series_By_Code(series_body: series_request, payload: jwt_dependecy = None):
+async def Delete_Series_By_Code(
+    series_body: series_request, 
+    payload: jwt_dependecy = None,
+    sessionx: Session = Depends(get_db)
+    ):
+
     status_code = 200
     returned_value = {}
     try:
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS')
+        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        #session
         
         if isinstance(permisos, list) and 'SLS_DSR' in permisos: #VERIFICA PERMISO VER SERIES
        
@@ -597,7 +603,7 @@ async def Delete_Series_By_Code(series_body: series_request, payload: jwt_depend
                     )
                     )
 
-            returned_item = session.execute(stmt).mappings().first()
+            returned_item = sessionx.execute(stmt).mappings().first()
 
             
             if bool(returned_item) and returned_item["Status"] != "Reserved":
@@ -617,8 +623,8 @@ async def Delete_Series_By_Code(series_body: series_request, payload: jwt_depend
                     )
                     )
 
-                affected = session.execute(stmt)
-                session.commit()
+                affected = sessionx.execute(stmt)
+                sessionx.commit()
                 returned_value.update({
                                         "status": False, 
                                         "message": f"Serie {series_body.SeriesCode} eliminada con exito!", 
@@ -636,7 +642,6 @@ async def Delete_Series_By_Code(series_body: series_request, payload: jwt_depend
                                     )
                 status_code = 422
 
-
         else:
             status_code = 422
             returned_value.update({
@@ -648,26 +653,20 @@ async def Delete_Series_By_Code(series_body: series_request, payload: jwt_depend
 
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code=status_code,
-            content= returned_value
-            )
-        # return returned_value
+    return JSONResponse(
+        status_code=status_code,
+        content= returned_value
+        )
