@@ -1,5 +1,6 @@
 import datetime
 from sqlalchemy import select, delete, insert, update
+from sqlalchemy.orm import Session
 
 def changeBin2Bool(data):
     # Define the binary string
@@ -103,14 +104,14 @@ def get_all_active_transfer(data: list = []):
     
 
 def sync_product_categories(
-        session,
+        sessionx,
         product_id: int,
         desired: list[dict],
         ProductCategories = None
     ):
     try:
         # 1️⃣ Estado actual en DB
-        rows = session.execute(
+        rows = sessionx.execute(
             select(
                 ProductCategories.c.idCategory,
                 ProductCategories.c.isMain
@@ -140,7 +141,7 @@ def sync_product_categories(
         ] #inserta si el key del desired list no esta en la lista general
 
         if to_insert: #verifica si  hay opciones para cambiar
-            session.execute(
+            sessionx.execute(
                 insert(ProductCategories),
                 to_insert
             )
@@ -156,7 +157,7 @@ def sync_product_categories(
                     )
                     .values(isMain=is_main)
                 )
-                session.execute(stmt)
+                sessionx.execute(stmt)
 
         # 4️⃣ DELETE
         to_delete = [
@@ -173,7 +174,7 @@ def sync_product_categories(
                     ProductCategories.c.idCategory.in_(to_delete)
                 )
             )
-            session.execute(stmt)
+            sessionx.execute(stmt)
                 
         return True, 'Ok!'
     except Exception as e:
@@ -181,7 +182,7 @@ def sync_product_categories(
         return False, e
 
 def sync_product_languages(
-        session,
+        sessionx: Session,
         product_id: int,
         langs: list[dict],
         ProductLanguage = None
@@ -199,7 +200,7 @@ def sync_product_languages(
             ProductLanguage.c.idProduct == product_id
         )
         current_ids = {
-            row.idLanguage for row in session.execute(stmt)
+            row.idLanguage for row in sessionx.execute(stmt)
         }
 
         # -------------------------
@@ -216,7 +217,7 @@ def sync_product_languages(
                 ProductLanguage.c.idProduct == product_id,
                 ProductLanguage.c.idLanguage.in_(to_delete)
             )
-            session.execute(stmt)
+            sessionx.execute(stmt)
 
         # -------------------------
         # 5️⃣ INSERT masivo
@@ -231,7 +232,7 @@ def sync_product_languages(
             ]
 
             stmt = insert(ProductLanguage).values(rows)
-            session.execute(stmt)
+            sessionx.execute(stmt)
 
         return True, 'Ok'
 
