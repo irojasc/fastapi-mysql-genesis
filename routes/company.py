@@ -33,7 +33,8 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.http_client
 
 @company_route.get("/business_partner/", status_code=200)
-async def Get_Business_Partner_By_CardCode(
+# async def Get_Business_Partner_By_CardCode(
+def Get_Business_Partner_By_CardCode(
         CardCode:str=None, 
         jwt_dependency: jwt_dependecy = None,
         sessionx:Session = Depends(get_db)
@@ -43,7 +44,7 @@ async def Get_Business_Partner_By_CardCode(
     status_code = 200
     try:
         if CardCode is not None:
-            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS', sessionx=sessionx)
+            permisos = get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS', sessionx=sessionx)
         
             if isinstance(permisos, list) and 'SLS_EBP' in permisos: #APRUEBA PERMISO SLS_ASR
                 stmt = (
@@ -104,7 +105,7 @@ async def Get_Business_Partner_By_CardCode(
                 returnedValue = {"body": {}, "message": "No tiene permiso para editar cliente"}
 
         else:
-            permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS', sessionx=sessionx)
+            permisos = get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS', sessionx=sessionx)
         
             if isinstance(permisos, list) and 'SLS_NBP' in permisos: #APRUEBA PERMISO SLS_ASR
                 #Consulta bancos
@@ -169,7 +170,8 @@ async def Get_Business_Partner_By_CardCode(
 # Currency = BusinessPartner.moneda or None 🎃
 
 @company_route.patch("/business_partner/", status_code=201)
-async def Edit_Business_Partner(
+# async def Edit_Business_Partner(
+def Edit_Business_Partner(
         BusinessPartner: BusinessPartner, 
         jwt_dependency: jwt_dependecy = None,
         sessionx:Session=Depends(get_db)
@@ -178,7 +180,7 @@ async def Edit_Business_Partner(
     status_code = 201
     try:
         #HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
 
         #OBTIENE EL IDUBIGEO
         ubigeo = sessionx.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
@@ -241,7 +243,7 @@ async def Edit_Business_Partner(
                 print("No aplica cambios en contactos")
 
             #RETORNAR SOCIO CREADO
-            value = await Get_All_Business_Partners_By_Param(CardCode=BusinessPartner.codigo_socio, sessionx=sessionx)
+            value = Get_All_Business_Partners_By_Param(CardCode=BusinessPartner.codigo_socio, sessionx=sessionx)
             returnedValue.update({"body": value})
 
         else:
@@ -260,7 +262,8 @@ async def Edit_Business_Partner(
     )
     
 @company_route.post("/business_partner/", status_code=201)
-async def Create_New_Business_Partner(
+# async def Create_New_Business_Partner(
+def Create_New_Business_Partner(
     BusinessPartner: BusinessPartner, 
     jwt_dependency: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
@@ -269,7 +272,7 @@ async def Create_New_Business_Partner(
     status_code = 201
     try:
         #HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
 
         #OBTIENE EL IDUBIGEO
         ubigeo = sessionx.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
@@ -353,7 +356,7 @@ async def Create_New_Business_Partner(
                 print("No registra cuenta bancaria")
             
             #RETORNAR SOCIO CREADO
-            value = await Get_All_Business_Partners_By_Param(CardCode=defineCardCode, sessionx=sessionx)
+            value = Get_All_Business_Partners_By_Param(CardCode=defineCardCode, sessionx=sessionx)
             returnedValue.update({"body": value})
 
         else:
@@ -372,7 +375,8 @@ async def Create_New_Business_Partner(
     )
 
 @company_route.get("/ubigeos/", status_code=200)
-async def Get_Ubigeo_From_Root(
+# async def Get_Ubigeo_From_Root(
+def Get_Ubigeo_From_Root(
     departamento_id:str=None, 
     provincia_id:str=None, 
     jwt_dependency: jwt_dependecy = None,
@@ -408,7 +412,8 @@ async def Get_Ubigeo_From_Root(
     return returned
 
 @company_route.get("/get_partner_data_from_sunat_reniec/", status_code=200)
-async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
+# async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
+def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
                                       jwt_dependency: jwt_dependecy = None, 
                                       client: httpx.AsyncClient = Depends(get_http_client),
                                       sessionx:Session=Depends(get_db)):
@@ -423,7 +428,7 @@ async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc',
         params = {
             "numero": nDocument
         }
-        response, status_code = await get_partner_by_ruc_dni(client=client, params=params, tdocument=tDocument)
+        response, status_code = get_partner_by_ruc_dni(client=client, params=params, tdocument=tDocument)
         
         if 'ubigeo' in response: #realiza consulta a backend genesis
             result = sessionx.query(Ubigeo.c.dep_name, Ubigeo.c.pro_name, Ubigeo.c.dis_name). \
@@ -433,8 +438,8 @@ async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc',
                 response.update({"distrito_gene": result[2]})
                 response.update({"provincia_gene": result[1]})
                 response.update({"departamento_gene": result[0]})
-                response.update({"distrito_opciones_gene": await Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2], provincia_id=response["ubigeo"][2:4])}) # consulta distrito
-                response.update({"provincia_opciones_gene": await Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2])}) #consulta provincia
+                response.update({"distrito_opciones_gene": Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2], provincia_id=response["ubigeo"][2:4])}) # consulta distrito
+                response.update({"provincia_opciones_gene": Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2])}) #consulta provincia
             else:
                 response.update({"distrito_gene": None})
                 response.update({"provincia_gene": None})
@@ -455,9 +460,9 @@ async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc',
         }
     )
 
-
 @company_route.get("/get_all_business_partners", status_code=200)
-async def Get_All_Business_Partners_By_Param(
+# async def Get_All_Business_Partners_By_Param(
+def Get_All_Business_Partners_By_Param(
     CardType:str=None, 
     CardCode:str=None, 
     jwt_dependency: jwt_dependecy = None,
@@ -494,7 +499,7 @@ async def Get_All_Business_Partners_By_Param(
                 )
                 results = sessionx.execute(stmt).mappings().all() #obtine en formato diccionario
                 returned = list(map(get_all_companies,results))
-                utc_time = await Get_Time()
+                utc_time = Get_Time()
                 returned = {"last_sync": utc_time["lima"], "partners" : returned}
 
                 #EXPORTA EN JSON
@@ -520,7 +525,8 @@ async def Get_All_Business_Partners_By_Param(
     return returned
     
 @company_route.get("/lastchanges", status_code=200)
-async def Get_Last_Company(
+# async def Get_Last_Company(
+def Get_Last_Company(
     last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), 
     jwt_dependency: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
@@ -542,7 +548,7 @@ async def Get_Last_Company(
 
         results = sessionx.execute(stmt).mappings().all() #obtine en formato diccionario
         returned = list(map(get_all_companies,results))
-        utc_time = await Get_Time() #consulta hora actual del sistema
+        utc_time = Get_Time() #consulta hora actual del sistema
         # print('Consulta proveedores: Hora Lima: ', utc_time["lima"])
         return {"last_sync": utc_time["lima"], "partners" : returned}
 

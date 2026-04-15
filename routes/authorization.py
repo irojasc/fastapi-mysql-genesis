@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, insert, delete, text, and_
-# from sqlalchemy.exc import SQLAlchemyError
 from utils.validate_jwt import jwt_dependecy
 from sqlmodel.modules import Modules
 from sqlmodel.permissions import Permissions
@@ -18,21 +17,22 @@ authorization_route = APIRouter(
 
 
 @authorization_route.get("/")
-async def get_data_Auth_UI(jwt_dependency: jwt_dependecy, 
+# async def get_data_Auth_UI(jwt_dependency: jwt_dependecy, 
+def get_data_Auth_UI(jwt_dependency: jwt_dependecy, 
                            user:str=None,
                            sessionx:Session=Depends(get_db)
                            ):
     not_matched_result = []
     try:
         #nueva consulta
-        results = sessionx.query(Modules.c.mdlCode, Modules.c.mdlName, Permissions.c.permCode, Permissions.c.permName, User_perm_mdl.c.user). \
+        results = sessionx.query(Modules.c.mdlCode, Modules.c.mdlName, Permissions.c.permCode, Permissions.c.permName, User_perm_mdl.c.user.label('userx')). \
             join(Modules, Permissions.c.mdlCode == Modules.c.mdlCode). \
             join(User_perm_mdl, and_(User_perm_mdl.c.permCode == Permissions.c.permCode, User_perm_mdl.c.user == user), isouter=True). \
             all()
         
         modules = {}
 
-        for mdl_code, mdl_name, perm_code, perm_name, user in results:
+        for mdl_code, mdl_name, perm_code, perm_name, userx in results:
             if mdl_code not in modules:
                 modules[mdl_code] = {
                     "code": mdl_code,
@@ -42,7 +42,7 @@ async def get_data_Auth_UI(jwt_dependency: jwt_dependecy,
             modules[mdl_code]["perm"].append({
                 "code": perm_code,
                 "name": perm_name,
-                "enabled": user is not None  # True si hay texto, False si es None
+                "enabled": userx is not None  # True si hay texto, False si es None
             })
 
         not_matched_result = list(modules.values())
@@ -54,7 +54,8 @@ async def get_data_Auth_UI(jwt_dependency: jwt_dependecy,
     return not_matched_result
 
 @authorization_route.get("/user")
-async def get_user_permissions_by_module(
+# async def get_user_permissions_by_module(
+def get_user_permissions_by_module(
     jwt_dependency: jwt_dependecy = None, 
     user:str=None, 
     module:str=None,
@@ -89,7 +90,8 @@ async def get_user_permissions_by_module(
     
 
 @authorization_route.patch("/user")
-async def update_user_permissions(
+# async def update_user_permissions(
+def update_user_permissions(
     jwt_dependency: jwt_dependecy, 
     auth_data_changed:auth_data,
     sessionx:Session=Depends(get_db)

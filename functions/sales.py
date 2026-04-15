@@ -642,13 +642,13 @@ def format_to_8digits(n: int, limit: int) -> str:
     return num_str.zfill(limit)
 
 
-async def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, docList: list = [], time:str=None):
-    
+# async def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, docList: list = [], time:str=None):
+def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, docList: list = [], time:str=None):
     returned_data = []
     try:
         for index, row in enumerate(docList):
             try:
-                json_data, status_code = await check_sales_document_status(client = client, params = row)
+                json_data, status_code = check_sales_document_status(client = client, params = row)
 
                 if status_code == 429:
                     print("¡Límite alcanzado! Abortando para intentar en el siguiente turno.")
@@ -664,7 +664,7 @@ async def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, do
                         })
 
                 #delay de 3 segundos entre consultas para evitar bloqueo
-                await asyncio.sleep(3.0)
+                asyncio.sleep(3.0)
 
             except Exception as e:
                 print(f"Error procesando documento numero {index}: {e}")

@@ -19,7 +19,8 @@ auth_route = APIRouter(
 TOKEN_HOURS_EXPIRATION = os.getenv("TOKEN_HOURS_EXPIRATION", default=None)
 
 @auth_route.post("/token", response_model=Token)
-async def login_for_access_token(
+# async def login_for_access_token(
+def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     sessionx: Session = Depends(get_db)
     ):

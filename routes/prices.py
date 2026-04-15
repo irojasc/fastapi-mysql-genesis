@@ -19,13 +19,14 @@ price_route = APIRouter(
 
 
 @price_route.get("/list_and_relations/")
-async def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None,
+# async def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None,
+def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None,
                                       sessionx:Session=Depends(get_db)
                                       ):
     returned_value = False
     try:
         #HORA CONSULTA
-        utc_time = await Get_Time()
+        utc_time = Get_Time()
 
         stmt = (select(Ware.c.code, Ware_Product.c.idProduct, Ware_Product.c.pvNew, Ware_Product.c.dsct).
                 join(Ware, Ware_Product.c.idWare == Ware.c.id).
@@ -65,7 +66,8 @@ async def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None,
 
 
 @price_route.get("/lastchanges", status_code=200)
-async def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), 
+# async def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), 
+def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), 
                                       jwt_dependency: jwt_dependecy = None,
                                       sessionx:Session=Depends(get_db)
                                       ):
@@ -85,10 +87,10 @@ async def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., descripti
         returned_value = sessionx.execute(stmt).mappings().all()
         returned_value = get_all_pricelist_format(data=returned_value) #obtiene todos los precios del almacen, esto falta migrar a otra tabla
         #HORA CONSULTA
-        utc_time = await Get_Time()
+        utc_time = Get_Time()
 
         #CONSULTA DATOS IMPUESTOS
-        sell_taxes = await Get_Taxes(type='s', sessionx=sessionx)
+        sell_taxes = Get_Taxes(type='s', sessionx=sessionx)
 
 
         if isinstance(returned_value, dict):

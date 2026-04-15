@@ -45,7 +45,8 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.http_client
 
 @sales_route.post("/open_cash_register/", status_code=201)
-async def Open_Cash_Register(
+# async def Open_Cash_Register(
+def Open_Cash_Register(
     cash_register_body: cash_register, 
     payload: jwt_dependecy,
     sessionx: Session = Depends(get_db)
@@ -56,10 +57,10 @@ async def Open_Cash_Register(
         "msg": "Error"
     }
     try:
-        create_date = await Get_Time() #<-- obtiene hora
+        create_date = Get_Time() #<-- obtiene hora
 
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         if isinstance(permisos, list) and 'SLS_CRG' in permisos: #APRUEBA PERMISO CRG
             
             #Validacion si tiene permisos para caja aperturada
@@ -84,7 +85,7 @@ async def Open_Cash_Register(
                 if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅
                     status_code = 201
                     #aca se realiza la consulta
-                    response = await Get_Cash_Register_By_Param(cash_register_body=cash_register(CodeTS = referencia), sessionx=sessionx)
+                    response = Get_Cash_Register_By_Param(cash_register_body=cash_register(CodeTS = referencia), sessionx=sessionx)
                     response = [dict(r) for r in response]
                     if isinstance(response, list) and len(response) == 1:
                         #convierte datetime a string
@@ -121,7 +122,8 @@ async def Open_Cash_Register(
     
 
 @sales_route.get("/get_sales_order_by_cashregistercode/", status_code=200)
-async def Get_Sales_Order_By_CashRegisterCode(
+# async def Get_Sales_Order_By_CashRegisterCode(
+def Get_Sales_Order_By_CashRegisterCode(
     cash_register_body: cash_register = Depends(), 
     payload: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
@@ -181,7 +183,8 @@ async def Get_Sales_Order_By_CashRegisterCode(
     
 
 @sales_route.get("/get_sales_order_by_ware_and_date/", status_code=200)
-async def Get_Sales_Order_By_Ware_And_Date(
+# async def Get_Sales_Order_By_Ware_And_Date(
+def Get_Sales_Order_By_Ware_And_Date(
         cash_register_body: sales_request = Depends(), 
         payload: jwt_dependecy = None,
         sessionx: Session = Depends(get_db)        
@@ -194,7 +197,7 @@ async def Get_Sales_Order_By_Ware_And_Date(
     try:
         
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         
         if isinstance(permisos, list) and 'SLS_ASR' in permisos: #APRUEBA PERMISO SLS_ASR
             
@@ -202,10 +205,11 @@ async def Get_Sales_Order_By_Ware_And_Date(
                 start_date = dt.strptime(cash_register_body.Date, "%Y-%m-%d")
                 end_date = start_date + timedelta(days=1)
             else:
-                async def validate_date_range(input_date_str: str) -> dict:
+                # async def validate_date_range(input_date_str: str) -> dict:
+                def validate_date_range(input_date_str: str) -> dict:
 
                     # Fecha superior: hoy (formato del sistema)
-                    time_x = await Get_Time()
+                    time_x = Get_Time()
                     date_top = dt.strptime(time_x["lima_transfer_format"], "%Y-%m-%d").date()
 
                     # Fecha inferior: 4 días atrás
@@ -227,7 +231,7 @@ async def Get_Sales_Order_By_Ware_And_Date(
                     # Construir respuesta en formato string
                     return date_top.strftime("%Y-%m-%d"), date_bottom.strftime("%Y-%m-%d"), current_date.strftime("%Y-%m-%d")
                 
-                date_top, date_bottom, date_current  = await validate_date_range(input_date_str = cash_register_body.Date)
+                date_top, date_bottom, date_current  = validate_date_range(input_date_str = cash_register_body.Date)
                 # date_current = date_bottom
                 start_date = dt.strptime(date_current, "%Y-%m-%d")
                 end_date = start_date + timedelta(days=1)
@@ -356,7 +360,8 @@ async def Get_Sales_Order_By_Ware_And_Date(
 
 
 @sales_route.get("/get_detail_sales_order/", status_code=200)
-async def Get_Detail_Sales_Order(
+# async def Get_Detail_Sales_Order(
+def Get_Detail_Sales_Order(
     cash_register_body: sales_request = Depends(), 
     payload: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
@@ -369,17 +374,18 @@ async def Get_Detail_Sales_Order(
 
     try:
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
 
         if isinstance(permisos, list) and 'SLS_ASR' in permisos: #APRUEBA PERMISO SLS_ASR
             if isinstance(permisos, list) and 'SLS_WDY' in permisos: #APRUEBA PERMISO SLS_WDY, PARA VER TODOS LOS REGISTROS
                 start_date = dt.strptime(cash_register_body.Date, "%Y-%m-%d")
                 end_date = start_date + timedelta(days=1)
             else:
-                async def validate_date_range(input_date_str: str) -> dict:
+                # async def validate_date_range(input_date_str: str) -> dict:
+                def validate_date_range(input_date_str: str) -> dict:
 
                     # Fecha superior: hoy (formato del sistema)
-                    time_x = await Get_Time()
+                    time_x = Get_Time()
                     date_top = dt.strptime(time_x["lima_transfer_format"], "%Y-%m-%d").date()
 
                     # Fecha inferior: 4 días atrás
@@ -401,7 +407,7 @@ async def Get_Detail_Sales_Order(
                     # Construir respuesta en formato string
                     return date_top.strftime("%Y-%m-%d"), date_bottom.strftime("%Y-%m-%d"), current_date.strftime("%Y-%m-%d")
                 
-                date_top, date_bottom, date_current  = await validate_date_range(input_date_str = cash_register_body.Date)
+                date_top, date_bottom, date_current  = validate_date_range(input_date_str = cash_register_body.Date)
                 
                 # date_current = date_bottom
                 start_date = dt.strptime(date_current, "%Y-%m-%d")
@@ -520,7 +526,8 @@ async def Get_Detail_Sales_Order(
     return returned_value
     
 @sales_route.get("/get_cash_register/", status_code=200)
-async def Get_Cash_Register_By_Param(
+# async def Get_Cash_Register_By_Param(
+def Get_Cash_Register_By_Param(
                                         cash_register_body: cash_register = Depends(), 
                                         payload: jwt_dependecy = None,
                                         sessionx:Session=Depends(get_db)):
@@ -565,7 +572,8 @@ async def Get_Cash_Register_By_Param(
     Este endpoint devuelve la información detallada de una orden de venta, 
     y segun bandera retorna documento pdf (cierrefacturacion).
     """)
-async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , 
+# async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , 
+def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , 
                                       payload: jwt_dependecy=None, 
                                       client: httpx.AsyncClient = Depends(get_http_client),
                                       sessionx: Session = Depends(get_db)
@@ -668,7 +676,7 @@ async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() ,
                     "COD_FORM_IMPR":"004", #formato 80 mm
                 }
                 
-                json_data, status_code_request = await check_sales_document_file(client=client, params=params)
+                json_data, status_code_request = check_sales_document_file(client=client, params=params)
 
                 if status_code_request == 200 and not(json_data.get("pdf_bytes", None)):
                     returnedVal.update({"message": str(json_data.get("errors", None))})
@@ -685,7 +693,7 @@ async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() ,
 
             elif result and result["DocType"] in ("NV"):
                 #Obtiene solo nota de venta en pdf por docentry
-                respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=body.DocEntry), 
+                respuesta = Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=body.DocEntry), 
                                                                       payload=payload,
                                                                       sessionx=sessionx
                                                                       )
@@ -722,7 +730,8 @@ async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() ,
     )
 
 @sales_route.get("/get_all_sales_order_of_cashregister/", status_code=200)
-async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register = Depends(), 
+# async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register = Depends(), 
+def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register = Depends(), 
                                               payload: jwt_dependecy = None,
                                               sessionx:Session=Depends(get_db)
                                               ):
@@ -766,7 +775,8 @@ async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register 
     return returned_value
 
 @sales_route.get("/get_header_data_cash_register/", status_code=200)
-async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_register = Depends(), 
+# async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_register = Depends(), 
+def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_register = Depends(), 
                                                  flag=True, payload: jwt_dependecy = None,
                                                  sessionx:Session=Depends(get_db)
                                                  ):
@@ -915,7 +925,8 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
 
 
 @sales_route.post("/close_cash_register/", status_code=201)
-async def Close_Cash_Register(cash_register_body: cash_register, 
+# async def Close_Cash_Register(cash_register_body: cash_register, 
+def Close_Cash_Register(cash_register_body: cash_register, 
                               payload: jwt_dependecy = None,
                               sessionx: Session=Depends(get_db)):
     returned_value = {
@@ -935,9 +946,9 @@ async def Close_Cash_Register(cash_register_body: cash_register,
 
         if(isinstance(rows, list) and len(rows) > 0 and rows[0]["Status"] == 'O'):
             #Validacion si tiene permisos para caja aperturada
-            create_date = await Get_Time() #<-- obtiene hora
+            create_date = Get_Time() #<-- obtiene hora
 
-            Montos_totales = await Get_Header_Data_Cash_Register_By_Param(cash_register_body=cash_register_body, 
+            Montos_totales = Get_Header_Data_Cash_Register_By_Param(cash_register_body=cash_register_body, 
                                                                           flag=False,
                                                                           sessionx=sessionx
                                                                           )
@@ -990,7 +1001,7 @@ async def Close_Cash_Register(cash_register_body: cash_register,
                 
                 response = sessionx.execute(stmt).mappings().all()
             
-                items = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS),
+                items = Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS),
                                                                   sessionx=sessionx)
                 header = [
                             {
@@ -1019,7 +1030,7 @@ async def Close_Cash_Register(cash_register_body: cash_register,
                     }) for idx in items
                 ]})
                 
-                respuesta = await Crear_Cierre_Ticket_PDF(body=Body_Ticket_Close(**header), payload=payload)
+                respuesta = Crear_Cierre_Ticket_PDF(body=Body_Ticket_Close(**header), payload=payload)
 
                 # returnedVal.update({"message": message, "status": status, "file": file})
 
@@ -1072,7 +1083,8 @@ async def Close_Cash_Register(cash_register_body: cash_register,
     )
       
 @sales_route.post("/create_external_sales_document/", status_code=201)
-async def Crear_Documento_Externo_De_Venta(body=sales_order, 
+# async def Crear_Documento_Externo_De_Venta(body=sales_order, 
+def Crear_Documento_Externo_De_Venta(body=sales_order, 
                                            series=series_internal_def, 
                                            payload: jwt_dependecy = None, 
                                            client: httpx.AsyncClient = Depends(get_http_client),
@@ -1133,7 +1145,7 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order,
             customer_f = {key: ("" if value is None else value) for key, value in customer.items()} #clientes a diccionario
 
             #OBTIENE HORA
-            create_date = await Get_Time()
+            create_date = Get_Time()
             time_f = {
                 "FEC_EMIS": create_date["lima_transfer_format"],
                 "FEC_VENCIMIENTO": create_date["lima_transfer_format"]
@@ -1236,7 +1248,7 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order,
             print(json.dumps(boleta_json, indent=4, ensure_ascii=False))
 
             #SE PROCEDE A GRABAR EL CUERPO EN MI FACT
-            json_data, status_code = await post_sales_document(client=client, params=boleta_json)
+            json_data, status_code = post_sales_document(client=client, params=boleta_json)
 
             #RECHAZADO POR EL PROVEEDOR 👻
             if "estado_documento" in json_data and json_data["estado_documento"] == '' and status_code == 200:
@@ -1247,7 +1259,7 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order,
                         })
             
             elif "estado_documento" in json_data and json_data["estado_documento"] != '104' and status_code == 200:
-                create_date = await Get_Time()
+                create_date = Get_Time()
                 returnedValue.update({"message": json_data["sunat_description"],
                                       "status_code": 201,
                                       "data": {
@@ -1305,7 +1317,8 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order,
 
 
 @sales_route.post("/register_external_document_state/", status_code=201)
-async def Registrar_Estado_Documento_Externo(body=external_document, 
+# async def Registrar_Estado_Documento_Externo(body=external_document, 
+def Registrar_Estado_Documento_Externo(body=external_document, 
                                              payload: jwt_dependecy = None,
                                              sessionx: Session = Depends(get_db)
                                              ):
@@ -1317,7 +1330,7 @@ async def Registrar_Estado_Documento_Externo(body=external_document,
     try:
       
         if body.DocEntry and body.Status:
-            create_date = await Get_Time()
+            create_date = Get_Time()
             stmt = (insert(SalesOrderSunat).
                     values(
                         DocEntry= body.DocEntry,
@@ -1356,7 +1369,8 @@ async def Registrar_Estado_Documento_Externo(body=external_document,
 
 
 @sales_route.post("/create_internal_sales_document/", status_code=201)
-async def Crear_Documento_Interno_De_Venta(body=sales_order, 
+# async def Crear_Documento_Interno_De_Venta(body=sales_order, 
+def Crear_Documento_Interno_De_Venta(body=sales_order, 
                                            series=series_internal_def, 
                                            payload: jwt_dependecy = None,
                                            sessionx: Session= Depends(get_db)
@@ -1375,7 +1389,7 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order,
         numero_documento = f"""{serie}-{correlativo}""" 
 
         ##HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
         subtotal_sinredo_subtotal = Decimal(body.SubTotal)
         subtotal = subtotal_sinredo_subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         igv = Decimal(body.VatSum).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -1530,7 +1544,8 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order,
 @sales_route.get("/get_pdf_for_sales_note/", status_code=200, description="""
     Obtiene el pdf en bytes de nota de venta con el docentry.
     """)
-async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, 
+# async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, 
+def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, 
                                               payload: jwt_dependecy,
                                               sessionx:Session=Depends(get_db)
                                               ):
@@ -1562,7 +1577,7 @@ async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document,
         result = sessionx.execute(stmt).mappings().all()
 
         if result:
-            respuesta = await Crear_Ticket_PDF(body=build_body_ticket(result), payload=payload)
+            respuesta = Crear_Ticket_PDF(body=build_body_ticket(result), payload=payload)
             returned_value = {
                 "status": not(respuesta["status"]),
                 "message": respuesta["message"],
@@ -1598,7 +1613,8 @@ async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document,
 
 
 @sales_route.post("/create_sales_order/", status_code=201)
-async def Crear_Orden_Venta(body:sales_order, 
+# async def Crear_Orden_Venta(body:sales_order, 
+def Crear_Orden_Venta(body:sales_order, 
                             payload: jwt_dependecy, 
                             client: httpx.AsyncClient = Depends(get_http_client),
                             sessionx:Session=Depends(get_db)
@@ -1674,7 +1690,7 @@ async def Crear_Orden_Venta(body:sales_order,
                 #CREA DOCUMENTO NUBEFACT
                 if body.doc_tipo in ('FAC', 'BOL'):
 
-                    response =  await Crear_Documento_Externo_De_Venta(client=client, 
+                    response = Crear_Documento_Externo_De_Venta(client=client, 
                                                                        body=body, 
                                                                        series=series, 
                                                                        payload=payload,
@@ -1695,7 +1711,7 @@ async def Crear_Orden_Venta(body:sales_order,
                 if status_code_doc == 201: #verifica si creo documento externo
                 
                     #CREA DOCUMENTO INTERNO
-                    response =  await Crear_Documento_Interno_De_Venta(body=body, 
+                    response = Crear_Documento_Interno_De_Venta(body=body, 
                                                                        series=series, 
                                                                        payload=payload,
                                                                        sessionx=sessionx) #creacion interna
@@ -1714,7 +1730,7 @@ async def Crear_Orden_Venta(body:sales_order,
 
                         data = external_document(**params)
 
-                        response_x =  await Registrar_Estado_Documento_Externo(body=data, 
+                        response_x = Registrar_Estado_Documento_Externo(body=data, 
                                                                                payload=payload,
                                                                                sessionx=sessionx) #creacion interna
                         
@@ -1733,7 +1749,7 @@ async def Crear_Orden_Venta(body:sales_order,
                 
                     if response["status_code"] == 201 and body.doc_tipo in ('NV'):
 
-                        respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=response["data"]["docentry"]), 
+                        respuesta = Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=response["data"]["docentry"]), 
                                                                               payload=payload,
                                                                               sessionx=sessionx)
             
@@ -1800,7 +1816,8 @@ async def Crear_Orden_Venta(body:sales_order,
     
 
 @sales_route.post("/cancel_sales_order/", status_code=200)
-async def Cancelar_Orden_De_Venta(
+# async def Cancelar_Orden_De_Venta(
+def Cancelar_Orden_De_Venta(
     body:sales_order_for_cancel, 
     payload: jwt_dependecy, 
     client: httpx.AsyncClient = Depends(get_http_client),
@@ -1814,7 +1831,7 @@ async def Cancelar_Orden_De_Venta(
         "Status_level": None
     }
     try:
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         solo_usuario = isinstance(permisos, list) and 'SLS_CSO' in permisos #VERIFICA PERMISO PARA CANCELAR VENTA PROPIA DEL USUARIO
         todas_ventas = isinstance(permisos, list) and 'SLS_TSO' in permisos #VERIFICA PERMISO PARA CANCELAR CUAQUIER VENTA
         
@@ -1823,7 +1840,7 @@ async def Cancelar_Orden_De_Venta(
         
         # if solo_usuario or todas_ventas:
         ##HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
         current_time_db = create_date["lima_bd_format"]
 
         #Defini funcion para comparar fechas
@@ -1878,7 +1895,7 @@ async def Cancelar_Orden_De_Venta(
                         "COD_PTO_VENTA": payload.get("username")
                         }
             
-            json_data, status_code = await cancel_sales_document(client=client, params=params)
+            json_data, status_code = cancel_sales_document(client=client, params=params)
 
             #108: solicitud de baja pendiente
             #105: anulado
@@ -2020,7 +2037,8 @@ async def Cancelar_Orden_De_Venta(
 
 
 @sales_route.post("/create_ticket_pdf/", status_code=201)
-async def Crear_Ticket_PDF(body:Body_Ticket, payload: jwt_dependecy):
+# async def Crear_Ticket_PDF(body:Body_Ticket, payload: jwt_dependecy):
+def Crear_Ticket_PDF(body:Body_Ticket, payload: jwt_dependecy):
     returnedVal = {
                     "message": "Error indeterminado",
                     "status": False,
@@ -2062,7 +2080,8 @@ async def Crear_Ticket_PDF(body:Body_Ticket, payload: jwt_dependecy):
 
 
 @sales_route.post("/create_close_ticket_pdf/", status_code=201)
-async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy):
+# async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy):
+def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy):
     returnedVal = {
                     "message": "Error indeterminado",
                     "status": False,
@@ -2105,58 +2124,62 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
     
 
 # @sales_route.post("/sincronizar_documentos/", status_code=201)
-async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
+# async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
+# def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
+def sincronizacion_diaria_madrugada():
 
     #solo se va considerar dos dias de antiguedad
-    today_server = await Get_Time() #<-- obtiene hora
+    today_server = Get_Time() #<-- obtiene hora
     today = dt.strptime(today_server["lima_transfer_format"], "%Y-%m-%d")
     start_date = today - timedelta(days=2)  # TOMA LOS DOS DIAS ANTERIORES
 
-    with SessionLocal() as db:
-        try:
-            stmt = (select( 
-                        SalesOrder.c.DocEntry,
-                        #Serie
-                        func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
-                        #Correlativo
-                        func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"),
-                        DocType.c.SunatCode.label("COD_TIP_CPE"),
-                        SalesOrder.c.DocDate.label("FEC_EMIS"),
-                        SalesOrderSunat.c.Status.label("estado_documento")
-                        )
-                .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
-                .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
-                .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
-                .filter(and_(SunatCodes.c.IsFinal == 2,
-                            SalesOrder.c.DocDate >= start_date))
-                .order_by(asc(SalesOrder.c.DocEntry))
-                )
-            
-            returned_value = [dict(r) for r in db.execute(stmt).mappings().all()]
-
-            for row in returned_value:
-                row["FEC_EMIS"] = row["FEC_EMIS"].strftime("%Y-%m-%d")
-
-
-            result  = await sincronizar_documentos_pendientes(client= client, docList=returned_value, time=today_server["lima_bd_format"])
-
-            len_cambios =  len(result) if isinstance(result, list) else None
-            if len_cambios:
-                stmt = text(f"UPDATE SalesOrderSunat set Status = :Status, UpdateDate = :UpdateDate where DocEntry = :DocEntry")
+    # Esto evita conflictos con el loop de FastAPI
+    with httpx.Client() as client:
+        with SessionLocal() as db:
+            try:
+                stmt = (select( 
+                            SalesOrder.c.DocEntry,
+                            #Serie
+                            func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
+                            #Correlativo
+                            func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"),
+                            DocType.c.SunatCode.label("COD_TIP_CPE"),
+                            SalesOrder.c.DocDate.label("FEC_EMIS"),
+                            SalesOrderSunat.c.Status.label("estado_documento")
+                            )
+                    .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
+                    .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
+                    .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
+                    .filter(and_(SunatCodes.c.IsFinal == 2,
+                                SalesOrder.c.DocDate >= start_date))
+                    .order_by(asc(SalesOrder.c.DocEntry))
+                    )
                 
-                response = db.execute(stmt, result)
+                returned_value = [dict(r) for r in db.execute(stmt).mappings().all()]
 
-                if response.rowcount > 0:
-                    db.commit()
-                    print(f"Se efectuaron {len_cambios} cambios durante sincronización...")
+                for row in returned_value:
+                    row["FEC_EMIS"] = row["FEC_EMIS"].strftime("%Y-%m-%d")
+
+
+                result  = sincronizar_documentos_pendientes(client= client, docList=returned_value, time=today_server["lima_bd_format"])
+
+                len_cambios =  len(result) if isinstance(result, list) else None
+                if len_cambios:
+                    stmt = text(f"UPDATE SalesOrderSunat set Status = :Status, UpdateDate = :UpdateDate where DocEntry = :DocEntry")
+                    
+                    response = db.execute(stmt, result)
+
+                    if response.rowcount > 0:
+                        db.commit()
+                        print(f"Se efectuaron {len_cambios} cambios durante sincronización...")
+                    else:
+                        print("No se efectuaron cambios durante sincronización...")
+
                 else:
                     print("No se efectuaron cambios durante sincronización...")
-
-            else:
-                print("No se efectuaron cambios durante sincronización...")
-    
-        except Exception as e:
-                db.rollback() # Si algo falla, deshacemos cambios
-                print(f"Error en la sincronización: {e}")
+        
+            except Exception as e:
+                    db.rollback() # Si algo falla, deshacemos cambios
+                    print(f"Error en la sincronización: {e}")
 
 

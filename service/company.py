@@ -2,14 +2,15 @@ from config.db import DECOLECTA_TOKEN
 import httpx
 
 # tDocument: Tipo de documento, puede ser ruc o dni
-async def get_partner_by_ruc_dni(client: httpx.AsyncClient = None, params=None, tdocument=None):
+# async def get_partner_by_ruc_dni(client: httpx.AsyncClient = None, params=None, tdocument=None):
+def get_partner_by_ruc_dni(client: httpx.AsyncClient = None, params=None, tdocument=None):
     agent = 'sunat' if tdocument == 'ruc' else 'reniec' if tdocument == 'dni' else ''
     if params:
         try:
             endpoint = f"""https://api.decolecta.com/v1/{agent}/{tdocument}"""
             headers = {"Authorization": f"Bearer {DECOLECTA_TOKEN}"}
 
-            response = await client.get(
+            response = client.get(
                 endpoint, 
                 params=params, 
                 headers=headers, 

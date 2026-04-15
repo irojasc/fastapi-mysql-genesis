@@ -3,7 +3,8 @@ import httpx
 # import json
 
 # params: cuerpo solicitado por mifact
-async def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
+# async def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
+def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
     if not params:
         return None, 422
     
@@ -14,7 +15,7 @@ async def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
     try:
         # 2. Llamada asíncrona usando el cliente inyectado
         # Nota: el timeout en httpx se puede pasar directamente aquí o configurarlo en el cliente
-        response = await client.post(
+        response = client.post(
             endpoint, 
             json=params, 
             timeout=30.0
@@ -37,7 +38,8 @@ async def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
 
 
 # consulta estado
-async def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #este servicio tambien trae xml, cdr
+# async def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #este servicio tambien trae xml, cdr
+def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #este servicio tambien trae xml, cdr
     if not params:
         return None, 422
     
@@ -46,14 +48,15 @@ async def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}
 
     try:
         # Aquí usamos el cliente asíncrono que pasamos por parámetro
-        response = await client.post(endpoint, json=payload, timeout=30.0)
+        response = client.post(endpoint, json=payload, timeout=30.0)
         return response.json(), response.status_code
     except Exception as e:
         print(f'Error at check_sales_document_status: {e}')
         return {"msg": str(e)}, 422
     
 # consulta estado
-async def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
+# async def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
+def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
     if not params:
         return None, 422
     
@@ -62,14 +65,15 @@ async def check_sales_document_status(client: httpx.AsyncClient, params: dict = 
 
     try:
         # Aquí usamos el cliente asíncrono que pasamos por parámetro
-        response = await client.post(endpoint, json=payload, timeout=30.0)
+        response = client.post(endpoint, json=payload, timeout=30.0)
         return response.json(), response.status_code
     except Exception as e:
         print(f'Error at check_sales_document_status: {e}')
         return {"msg": str(e)}, 422
 
 # cancela / anula documento
-async def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
+# async def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
+def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
     if not params:
         return None, 422
     
@@ -78,7 +82,7 @@ async def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
 
     try:
         # Aquí usamos el cliente asíncrono que pasamos por parámetro
-        response = await client.post(endpoint, json=payload, timeout=30.0)
+        response = client.post(endpoint, json=payload, timeout=30.0)
         return response.json(), response.status_code
     except Exception as e:
         print(f'Error at cancel_sales_document: {e}')

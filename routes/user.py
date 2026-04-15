@@ -49,7 +49,8 @@ def get_users(jwt_dependency: jwt_dependecy, sessionx: Session = Depends(get_db)
 
         
 @user_route.post("/", status_code=201)
-async def get_last_row(jwt_dependency: jwt_dependecy, new_user: new_user, sessionx: Session = Depends(get_db)):
+# async def get_last_row(jwt_dependency: jwt_dependecy, new_user: new_user, sessionx: Session = Depends(get_db)):
+def get_last_row(jwt_dependency: jwt_dependecy, new_user: new_user, sessionx: Session = Depends(get_db)):
     try:
         # max_id = sessionx.query(func.max(User.c.id)).first()
         #🎃 1|CUIDADO # SI VARIAS PERSONAS CREAN PUEDE HABER DUPLICIDAD DE ID, LO MEJOR ES CONGELAR MIENTRAS SE CONSULTA

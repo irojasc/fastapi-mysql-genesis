@@ -17,7 +17,8 @@ linker_route = APIRouter(
 )
 
 @linker_route.get("/companypublisher/nopair", status_code=200)
-async def Get_All_NoPair_publisher(jwt_dependency: jwt_dependecy,
+# async def Get_All_NoPair_publisher(jwt_dependency: jwt_dependecy,
+def Get_All_NoPair_publisher(jwt_dependency: jwt_dependecy,
                                    sessionx:Session=Depends(get_db)):
     returned = []
     try:
@@ -31,7 +32,8 @@ async def Get_All_NoPair_publisher(jwt_dependency: jwt_dependecy,
     return returned
 
 @linker_route.get("/companypublisher/pair", status_code=200)
-async def Get_All_Pair_publisher(jwt_dependency: jwt_dependecy,
+# async def Get_All_Pair_publisher(jwt_dependency: jwt_dependecy,
+def Get_All_Pair_publisher(jwt_dependency: jwt_dependecy,
                                  sessionx:Session=Depends(get_db)
                                  ):
     returned = []
@@ -45,7 +47,8 @@ async def Get_All_Pair_publisher(jwt_dependency: jwt_dependecy,
     return returned
 
 @linker_route.post("/companypublisher", status_code=201)
-async def post_pairs_company_publisher(linker: linker_list, 
+# async def post_pairs_company_publisher(linker: linker_list, 
+def post_pairs_company_publisher(linker: linker_list, 
                                        jwt_dependency: jwt_dependecy,
                                        sessionx:Session=Depends(get_db)
                                        ):
@@ -63,7 +66,8 @@ async def post_pairs_company_publisher(linker: linker_list,
     return []
 
 @linker_route.delete("/companypublisher", status_code=204)
-async def delete_pairs_company_publisher(linker: linker_list, 
+# async def delete_pairs_company_publisher(linker: linker_list, 
+def delete_pairs_company_publisher(linker: linker_list, 
                                          jwt_dependency: jwt_dependecy,
                                          sessionx:Session=Depends(get_db)
                                          ):

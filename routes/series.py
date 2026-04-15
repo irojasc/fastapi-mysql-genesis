@@ -23,7 +23,8 @@ series_route = APIRouter(
 )
 
 @series_route.get("/get_series_data_by_ware/", status_code=200)
-async def Get_Series_Data_By_Ware(
+# async def Get_Series_Data_By_Ware(
+def Get_Series_Data_By_Ware(
     series_body: series_request = Depends(), 
     payload: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
@@ -64,7 +65,7 @@ async def Get_Series_Data_By_Ware(
             return transformed
             
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         
         if isinstance(permisos, list) and 'SLS_SLD' in permisos: #VERIFICA PERMISO VER SERIES
        
@@ -113,7 +114,8 @@ async def Get_Series_Data_By_Ware(
     return returned_value
 
 @series_route.get("/get_series_by_code/", status_code=200)
-async def Get_Series_By_Code(
+# async def Get_Series_By_Code(
+def Get_Series_By_Code(
     series_body: series_request = Depends(), 
     payload: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
@@ -122,7 +124,7 @@ async def Get_Series_By_Code(
     status_code = 200
     returned_value = {}
     try:
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
 
         if series_body.SeriesCode is None and isinstance(permisos, list) and 'SLS_CSR' in permisos: #Modo crear
             #consulta tipos de documento
@@ -281,7 +283,8 @@ async def Get_Series_By_Code(
         )
 
 @series_route.post("/create_new_serie/", status_code=201)
-async def Create_Serie(
+# async def Create_Serie(
+def Create_Serie(
     series_body: series_create_request, 
     payload: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
@@ -289,10 +292,11 @@ async def Create_Serie(
     status_code = 201
     returned_value = {}
     try:
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         if isinstance(permisos, list) and 'SLS_CSR' in permisos: #Modo crear
             
-            async def create_serie(body_x: series_create_request = None, user=None):
+            # async def create_serie(body_x: series_create_request = None, user=None):
+            def create_serie(body_x: series_create_request = None, user=None):
                 doc_type_map = {
                 "NV": "Nota de Venta",
                 "BOL": "Boleta",
@@ -305,7 +309,7 @@ async def Create_Serie(
                 "Blocked": "Bloqueado"
                 }
                 
-                create_date = await Get_Time()
+                create_date = Get_Time()
                 
                 stmt = (insert(DocSeries)
                         .values(
@@ -371,7 +375,7 @@ async def Create_Serie(
                     status_code = 422
 
                 else:
-                    status_code, data = await create_serie(body_x=series_body, user=payload.get("username"))
+                    status_code, data = create_serie(body_x=series_body, user=payload.get("username"))
                     returned_value.update({
                                             "status": True,
                                             "message": "Ok!",
@@ -392,7 +396,7 @@ async def Create_Serie(
                     status_code = 422
 
                 else:
-                    status_code, data = await create_serie(body_x=series_body, user=payload.get("username"))
+                    status_code, data = create_serie(body_x=series_body, user=payload.get("username"))
                     returned_value.update({
                                             "status": True,
                                             "message": "Ok!",
@@ -429,17 +433,19 @@ async def Create_Serie(
         )
 
 @series_route.patch("/edit_serie_by_code/", status_code=200)
-async def Edit_Serie_By_Code(
+# async def Edit_Serie_By_Code(
+def Edit_Serie_By_Code(
     series_body: series_create_request, 
     payload: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)):
     status_code = 200
     returned_value = {}
     try:
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         if isinstance(permisos, list) and 'SLS_ESR' in permisos: #Modo editar
             
-            async def edit_serie(body_x: series_create_request = None, user=None):
+            # async def edit_serie(body_x: series_create_request = None, user=None):
+            def edit_serie(body_x: series_create_request = None, user=None):
                 doc_type_map = {
                     "NV": "Nota de Venta",
                     "BOL": "Boleta",
@@ -452,7 +458,7 @@ async def Edit_Serie_By_Code(
                     "Blocked": "Bloqueado"
                 }
                 
-                create_date = await Get_Time()
+                create_date = Get_Time()
                 
                 stmt = (update(DocSeries)
                         .where(DocSeries.c.SeriesCode == body_x.codigo)
@@ -523,8 +529,7 @@ async def Edit_Serie_By_Code(
                     content= returned_value
                     )
 
-
-            status_code, data = await edit_serie(body_x=series_body, user=payload.get("username"))
+            status_code, data = edit_serie(body_x=series_body, user=payload.get("username"))
             returned_value.update({
                                     "status": True,
                                     "message": "Ok!",
@@ -575,7 +580,8 @@ async def Edit_Serie_By_Code(
 
     
 @series_route.delete("/delete_series_by_code/", status_code=200)
-async def Delete_Series_By_Code(
+# async def Delete_Series_By_Code(
+def Delete_Series_By_Code(
     series_body: series_request, 
     payload: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
@@ -585,7 +591,7 @@ async def Delete_Series_By_Code(
     returned_value = {}
     try:
         #Validacion MODULO NATIVO: SLS
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
         
         if isinstance(permisos, list) and 'SLS_DSR' in permisos: #VERIFICA PERMISO VER SERIES
        

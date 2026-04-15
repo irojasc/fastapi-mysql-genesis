@@ -65,7 +65,7 @@ async def startup_event():
                 'cron', 
                 hour=hora, 
                 minute=15,
-                args=[app.state.http_client]
+                # args=[app.state.http_client]
                 )
     scheduler.start()
 

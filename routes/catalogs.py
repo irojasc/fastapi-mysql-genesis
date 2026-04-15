@@ -18,7 +18,8 @@ catalog_route = APIRouter(
 )
 
 @catalog_route.get("/time")
-async def Get_Time(jwt_dependency: jwt_dependecy = None):
+# async def Get_Time(jwt_dependency: jwt_dependecy = None):
+def Get_Time(jwt_dependency: jwt_dependecy = None):
     # Hora UTC
     now_utc = datetime.now(timezone.utc)
 
@@ -35,7 +36,8 @@ async def Get_Time(jwt_dependency: jwt_dependecy = None):
     }
 
 @catalog_route.get("/tax_types/")
-async def Get_Taxes(type: str = None , 
+# async def Get_Taxes(type: str = None , 
+def Get_Taxes(type: str = None ,
                     jwt_dependency: jwt_dependecy = None,
                     sessionx:Session=Depends(get_db)
                     ):
@@ -60,7 +62,8 @@ async def Get_Taxes(type: str = None ,
     return [dict(item) for item in returned_value]
 
 @catalog_route.get("/languages/")
-async def Get_Languages(
+# async def Get_Languages(
+def Get_Languages(
     jwt_dependency: jwt_dependecy = None,
     sessionx:Session = Depends(get_db)
     ):
@@ -79,7 +82,8 @@ async def Get_Languages(
     return returned_value
 
 @catalog_route.get("/categories/")
-async def Get_Product_Category(
+# async def Get_Product_Category(
+def Get_Product_Category(
     jwt_dependency: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
     ):

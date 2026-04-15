@@ -44,7 +44,8 @@ inventory_route = APIRouter(
 #aqui falta agregar la parte donde solo algunos pueden ejecutar este comando
 
 @inventory_route.get("/", status_code=200)
-async def Get_All_Inventory_and_Data_Product(
+# async def Get_All_Inventory_and_Data_Product(
+def Get_All_Inventory_and_Data_Product(
     token_key: str = None, 
     idProduct: int = None, 
     jwt_dependency: jwt_dependecy = None,
@@ -83,7 +84,7 @@ async def Get_All_Inventory_and_Data_Product(
             if token_key == 'CHUSPa@123':
                 result_format = get_statement() #cuando va vacio, trae todos los resultados
 
-                utc_time = await Get_Time()
+                utc_time = Get_Time()
                 returnedVal = {
                     "last_sync": utc_time["lima"],
                     "options":result_format
@@ -108,7 +109,8 @@ async def Get_All_Inventory_and_Data_Product(
     return returned
 
 @inventory_route.get("/lastchanges", status_code=200)
-async def Get_Last_Inventory_Data_Product_Changes(
+# async def Get_Last_Inventory_Data_Product_Changes(
+def Get_Last_Inventory_Data_Product_Changes(
     last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), 
     jwt_dependency: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
@@ -144,7 +146,7 @@ async def Get_Last_Inventory_Data_Product_Changes(
         
         results = sessionx.execute(stmt).mappings().all() #obtine en formato diccionario
         result_format = get_all_inventory_data(results)
-        utc_time = await Get_Time() #consulta hora actual del sistema
+        utc_time = Get_Time() #consulta hora actual del sistema
         # print('Consulta ware products: Hora Lima: ', utc_time["lima"])
         
         returned = {"last_sync": utc_time["lima"], "options" : result_format}
@@ -160,7 +162,8 @@ async def Get_Last_Inventory_Data_Product_Changes(
     return returned
 
 @inventory_route.get("/warehouse_product", status_code=200)
-async def Get_WareHouse_Product_By_Id(
+# async def Get_WareHouse_Product_By_Id(
+def Get_WareHouse_Product_By_Id(
     idProduct: str = None, 
     jwt_dependency: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
@@ -175,9 +178,10 @@ async def Get_WareHouse_Product_By_Id(
 
         # 2. Obtener Unidades e Impuestos (Operaciones Async)
         # Podrías usar asyncio.gather para que corran en paralelo si quieres más velocidad
-        list_units = await Get_All_Units_Of_Measurement(sessionx=sessionx)
-        list_pur_taxes = await Get_Taxes(type='p', sessionx=sessionx)
-        list_sel_taxes = await Get_Taxes(type='s', sessionx=sessionx)
+        list_units = Get_All_Units_Of_Measurement(sessionx=sessionx)
+
+        list_pur_taxes = Get_Taxes(type='p', sessionx=sessionx)
+        list_sel_taxes = Get_Taxes(type='s', sessionx=sessionx)
 
         uoms = [dict(x) for x in list_units] if isinstance(list_units, list) else []
         pur_taxes = [{'VatCode': it['VatCode'], 'VatName': it['VatName'].upper()} for it in list_pur_taxes] if isinstance(list_pur_taxes, list) else []
@@ -340,7 +344,8 @@ async def Get_WareHouse_Product_By_Id(
 
 #obtiene las trasferencias entre almacenes y los ingresos como salidas
 @inventory_route.get("/transfer/checkcurrents", status_code=200)
-async def Get_Current_Transfers_By_Ware_And_Date(
+# async def Get_Current_Transfers_By_Ware_And_Date(
+def Get_Current_Transfers_By_Ware_And_Date(
     curIdWare: int = None, 
     curDate: str = None, 
     stateAbove: int = 1, 
@@ -407,7 +412,8 @@ async def Get_Current_Transfers_By_Ware_And_Date(
     return returned
 
 @inventory_route.get("/transfer/checkbytimestamp", status_code=200)
-async def Get_Transfer_By_TimeStamp(curIdWare: int = None, 
+# async def Get_Transfer_By_TimeStamp(curIdWare: int = None, 
+def Get_Transfer_By_TimeStamp(curIdWare: int = None, 
                                     timeStamp: str = '', 
                                     jwt_dependency: jwt_dependecy = None,
                                     sessionx: Session=Depends(get_db)
@@ -470,7 +476,8 @@ async def Get_Transfer_By_TimeStamp(curIdWare: int = None,
     return returned
 
 @inventory_route.patch("/updatequantities", status_code=200)
-async def Update_Inventory_Quantities(
+# async def Update_Inventory_Quantities(
+def Update_Inventory_Quantities(
     invoice: InOut_Qty, 
     jwt_dependency: 
     jwt_dependecy = None,
@@ -480,7 +487,7 @@ async def Update_Inventory_Quantities(
     message = 'Ok'
     try:
         #HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
 
         def UpdateQtyWareProduct(objInvoic_e = None):
             #state 1, transferencia cerrada [WARE_PRODUCT]
@@ -557,7 +564,8 @@ async def Update_Inventory_Quantities(
     }
 
 @inventory_route.patch("/product/changelocation", status_code=200)
-async def change_product_location(
+# async def change_product_location(
+def change_product_location(
     invoice: WareProduct = None, 
     jwt_dependency: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
@@ -570,7 +578,7 @@ async def change_product_location(
     }
     try:
         #HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
 
         idWare = select(Ware.c.id).where(Ware.c.code == invoice.wareCode).limit(1).subquery()
         sessionx.execute(update(Ware_Product)
@@ -595,7 +603,8 @@ async def change_product_location(
     return response
 
 @inventory_route.post("/inventorymode", status_code=200)
-async def run_inventory_mode(
+# async def run_inventory_mode(
+def run_inventory_mode(
     input_param: ware_edited = None, 
     jwt_dependency: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
@@ -609,7 +618,7 @@ async def run_inventory_mode(
     try:
         
         #HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
 
         result_1 = sessionx.execute(update(Ware_Product)
                                    .where(and_(Ware_Product.c.idWare == input_param.wareCode,
@@ -650,7 +659,8 @@ async def run_inventory_mode(
     return response
 
 @inventory_route.patch("/transfer/downgradestate", status_code=200)
-async def downgrade_transfer_state(invoice: InOut_Qty = False, 
+# async def downgrade_transfer_state(invoice: InOut_Qty = False, 
+def downgrade_transfer_state(invoice: InOut_Qty = False, 
                                    jwt_dependency: jwt_dependecy = None, 
                                    sessiono: Session = Depends(get_db)
                                    ):
@@ -667,7 +677,7 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False,
 
     try:
         #HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
         lima_ts = create_date["lima_transfer_format"]
 
         #primero verifica que nadie lo haya tomado
@@ -794,7 +804,8 @@ async def downgrade_transfer_state(invoice: InOut_Qty = False,
 
 
 @inventory_route.patch("/product/", status_code=200)
-async def update_warehouse_product(
+# async def update_warehouse_product(
+def update_warehouse_product(
                                     product_: ware_product_ = None, 
                                     jwt_dependency: jwt_dependecy = None,
                                     sessionx:Session=Depends(get_db)
@@ -856,7 +867,7 @@ async def update_warehouse_product(
             # trae stock positivo para wareCodes con enable false
 
             #HORA DE ACTUALIZACION
-            create_date = await Get_Time()
+            create_date = Get_Time()
 
             stmt = (update(Product)
                     .where(Product.c.id == idProduct)
@@ -949,7 +960,7 @@ async def update_warehouse_product(
             # Confirmar la transacción
             sessionx.commit()
 
-            result_format = await Get_All_Inventory_and_Data_Product(idProduct=idProduct, sessionx=sessionx)
+            result_format = Get_All_Inventory_and_Data_Product(idProduct=idProduct, sessionx=sessionx)
 
             # Retornar el número de filas afectadas (puedes también retornar algo más si lo necesitas)
             content = {
@@ -986,7 +997,8 @@ async def update_warehouse_product(
         return JSONResponse(content=content, status_code=500)
 
 @inventory_route.post("/product/", status_code=200)
-async def create_warehouse_product(
+# async def create_warehouse_product(
+def create_warehouse_product(
     product_: ware_product_ = None, 
     jwt_dependency: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
@@ -1017,7 +1029,7 @@ async def create_warehouse_product(
         #[('STC', 1), ('SNTG', 2), ('ALYZ', 3), ('WEB', 4), ('FRA', 5)]
 
         #HORA DE REGISTRO
-        create_date = await Get_Time()
+        create_date = Get_Time()
 
 
         stmt = insert(Product).values(
@@ -1109,7 +1121,7 @@ async def create_warehouse_product(
 
             sessionx.commit()
 
-            result_format = await Get_All_Inventory_and_Data_Product(idProduct=idProduct, sessionx=sessionx) #consulta ware product creado
+            result_format = Get_All_Inventory_and_Data_Product(idProduct=idProduct, sessionx=sessionx) #consulta ware product creado
 
             content = {
                 "success": True,
@@ -1149,7 +1161,8 @@ async def create_warehouse_product(
 
 
 @inventory_route.get("/units_of_measurement/", status_code=200)
-async def Get_All_Units_Of_Measurement(
+# async def Get_All_Units_Of_Measurement(
+def Get_All_Units_Of_Measurement(
     jwt_dependency: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
     ):

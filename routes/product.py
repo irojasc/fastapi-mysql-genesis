@@ -49,7 +49,8 @@ def get_isbn_isExists(isbn):
 
 
 @product_route.get("/", status_code=200)
-async def get_all_products(jwt_dependency: jwt_dependecy):
+# async def get_all_products(jwt_dependency: jwt_dependecy):
+def get_all_products(jwt_dependency: jwt_dependecy):
     return []
     # if jwt_dependency:
     #     return {
@@ -60,7 +61,8 @@ async def get_all_products(jwt_dependency: jwt_dependecy):
 
 
 @product_route.get("/stock_by_product_attribute", status_code=200)
-async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
+# async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
+def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
                                 Isbn: Optional[str] = "",
                                 Title: Optional[str] = "",
                                 Autor: Optional[str] = "",
@@ -133,7 +135,8 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
             )
         
 @product_route.post("/request_maintenance", status_code=200)
-async def request_product_maintenance(jwt_dependency: jwt_dependecy, 
+# async def request_product_maintenance(jwt_dependency: jwt_dependecy, 
+def request_product_maintenance(jwt_dependency: jwt_dependecy, 
                                       product_maintenance: product_maintenance,
                                       sessionx:Session=Depends(get_db)
                                       ):
@@ -176,7 +179,8 @@ async def request_product_maintenance(jwt_dependency: jwt_dependecy,
         return {"state": True}
 
 @product_route.delete("/", status_code=200)
-async def delete_product(jwt_dependency: jwt_dependecy, 
+# async def delete_product(jwt_dependency: jwt_dependecy, 
+def delete_product(jwt_dependency: jwt_dependecy, 
                          idProduct: str = None, 
                          curDate: str = None, 
                          nameModule: str = None,
@@ -231,7 +235,8 @@ async def delete_product(jwt_dependency: jwt_dependecy,
     
 
 @product_route.get("/getlastimage", description="Obtiene imagen de producto desde bucket s3 con el codigo interno del producto seguido de la extension del formato")
-async def obtener_imagen(
+# async def obtener_imagen(
+def obtener_imagen(
     jwt_dependency: jwt_dependecy, 
     body: product_basic_model = Depends(), 
     s3 = Depends(get_s3_client), 
@@ -321,7 +326,8 @@ async def obtener_imagen(
     
 
 @product_route.get("/uploads/presign", description="Optine url prefirmada para carga ", status_code=200)
-async def obtener_url_prefirmada_para_actualizacion(
+# async def obtener_url_prefirmada_para_actualizacion(
+def obtener_url_prefirmada_para_actualizacion(
         payload: jwt_dependecy, 
         body: product_basic_model = Depends(), 
         s3 = Depends(get_s3_client),
@@ -337,7 +343,7 @@ async def obtener_url_prefirmada_para_actualizacion(
 
     try:
 
-        permisos = await get_user_permissions_by_module(user=payload.get("username"), module='IVT', sessionx=sessionx)
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='IVT', sessionx=sessionx)
 
         if isinstance(permisos, list) and 'IVT_UIM' not in permisos: #APRUEBA PERMISO IVT_UIM: permiso para actualizar imagen
             raise RuntimeError("No cuenta con permisos para actualizar imagenes")
@@ -382,7 +388,7 @@ async def obtener_url_prefirmada_para_actualizacion(
             
             #registra en tabla uploads
             if url:
-                date = await Get_Time() #<-- obtiene hora
+                date = Get_Time() #<-- obtiene hora
                 # LastDate= date["lima_bd_format"]
                 stmt = (insert(Uploads).
                         values(
@@ -435,7 +441,8 @@ async def obtener_url_prefirmada_para_actualizacion(
     )
 
 @product_route.post("/uploads/confirm", description="confirma carga de archivos desde el frondend para objeto de tipo producto", status_code=200)
-async def confirmar_archivo_de_producto(
+# async def confirmar_archivo_de_producto(
+def confirmar_archivo_de_producto(
     payload: jwt_dependecy, 
     body: product_basic_model, 
     s3 = Depends(get_s3_client),
@@ -451,7 +458,7 @@ async def confirmar_archivo_de_producto(
 
     try:
         #0| CAMBIA DE ESTADO PENDING TO CLOSE
-        date = await Get_Time() #<-- obtiene hora
+        date = Get_Time() #<-- obtiene hora
         current_time = date["lima_bd_format"]
         
         stmt = (update(Uploads)

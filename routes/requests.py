@@ -18,8 +18,6 @@ credentials_dict = json.loads(credentials_json)
 # creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
 creds = Credentials.from_service_account_info(credentials_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
 
-
-
 request_route = APIRouter(
     prefix = '/request',
     tags=['Request']
