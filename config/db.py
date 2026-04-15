@@ -1,4 +1,5 @@
 import os
+import httpx
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker, aliased
@@ -26,6 +27,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def get_http_client():
+    with httpx.Client() as client: # Cliente síncrono
+        yield client
 
 meta = MetaData()
 SECRET_KEY = os.getenv("SECRET_KEY", default=None)

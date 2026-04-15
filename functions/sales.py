@@ -643,7 +643,8 @@ def format_to_8digits(n: int, limit: int) -> str:
 
 
 # async def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, docList: list = [], time:str=None):
-def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, docList: list = [], time:str=None):
+# def sincronizar_documentos_pendientes(client: httpx.AsyncClient = None, docList: list = [], time:str=None):
+def sincronizar_documentos_pendientes(client: httpx.Client = None, docList: list = [], time:str=None):
     returned_data = []
     try:
         for index, row in enumerate(docList):

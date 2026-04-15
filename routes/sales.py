@@ -41,8 +41,14 @@ sales_route = APIRouter(
 
 
 # Esta función actúa como un "puente"
-def get_http_client(request: Request) -> httpx.AsyncClient:
-    return request.app.state.http_client
+# def get_http_client() -> httpx.AsyncClient:
+# def get_http_client(request: Request) -> httpx.AsyncClient:
+#     return request.app.state.http_client
+
+def get_http_client():
+    with httpx.Client() as client: # Cliente síncrono
+        yield client
+
 
 @sales_route.post("/open_cash_register/", status_code=201)
 # async def Open_Cash_Register(

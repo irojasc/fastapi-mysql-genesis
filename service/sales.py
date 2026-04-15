@@ -4,7 +4,8 @@ import httpx
 
 # params: cuerpo solicitado por mifact
 # async def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
-def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
+# def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
+def post_sales_document(client: httpx.Client = None, params:dict={}):
     if not params:
         return None, 422
     
@@ -39,7 +40,8 @@ def post_sales_document(client: httpx.AsyncClient = None, params:dict={}):
 
 # consulta estado
 # async def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #este servicio tambien trae xml, cdr
-def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #este servicio tambien trae xml, cdr
+# def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #este servicio tambien trae xml, cdr
+def check_sales_document_file(client: httpx.Client, params: dict = {}): #este servicio tambien trae xml, cdr
     if not params:
         return None, 422
     
@@ -56,7 +58,8 @@ def check_sales_document_file(client: httpx.AsyncClient, params: dict = {}): #es
     
 # consulta estado
 # async def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
-def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
+# def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
+def check_sales_document_status(client: httpx.Client, params: dict = {}):
     if not params:
         return None, 422
     
@@ -73,7 +76,8 @@ def check_sales_document_status(client: httpx.AsyncClient, params: dict = {}):
 
 # cancela / anula documento
 # async def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
-def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
+# def cancel_sales_document(client: httpx.AsyncClient, params: dict = {}):
+def cancel_sales_document(client: httpx.Client, params: dict = {}):
     if not params:
         return None, 422
     

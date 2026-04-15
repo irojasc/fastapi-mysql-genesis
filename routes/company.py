@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, asc, func, insert, and_, or_, update
 from sqlalchemy.dialects.mysql import insert as insert_dialect
 from utils.validate_jwt import jwt_dependecy
-from config.db import get_db
+from config.db import get_db, get_http_client
 from sqlmodel.company import Company
 from sqlmodel.banks import Banks
 from sqlmodel.paymentterms import PaymentTerms
@@ -28,9 +28,6 @@ company_route = APIRouter(
     prefix = '/company',
     tags=['Company']
 )
-
-def get_http_client(request: Request) -> httpx.AsyncClient:
-    return request.app.state.http_client
 
 @company_route.get("/business_partner/", status_code=200)
 # async def Get_Business_Partner_By_CardCode(
@@ -415,7 +412,8 @@ def Get_Ubigeo_From_Root(
 # async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
 def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
                                       jwt_dependency: jwt_dependecy = None, 
-                                      client: httpx.AsyncClient = Depends(get_http_client),
+                                    #   client: httpx.AsyncClient = Depends(get_http_client),
+                                      client: httpx.Client = Depends(get_http_client),
                                       sessionx:Session=Depends(get_db)):
     """IMPORTANTE, ༼ つ ◕_◕ ༽つ DEBE SER EL MISMO FORMATO SI CAMBIA DE PROVEEDOR VVVV \n
     CUANDO NO EXISTE UBIGEO, RETORNA '-'
