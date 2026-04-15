@@ -25,7 +25,7 @@ from functions.sales import generar_ticket, build_body_ticket, generar_ticket_cl
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
-from config.db import con, session, MIFACT_MIRUC, get_db
+from config.db import MIFACT_MIRUC, get_db, SessionLocal
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
@@ -60,7 +60,6 @@ async def Open_Cash_Register(
 
         #Validacion MODULO NATIVO: SLS
         permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
-        #session
         if isinstance(permisos, list) and 'SLS_CRG' in permisos: #APRUEBA PERMISO CRG
             
             #Validacion si tiene permisos para caja aperturada
@@ -85,7 +84,7 @@ async def Open_Cash_Register(
                 if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅
                     status_code = 201
                     #aca se realiza la consulta
-                    response = await Get_Cash_Register_By_Param(cash_register_body=cash_register(CodeTS = referencia))
+                    response = await Get_Cash_Register_By_Param(cash_register_body=cash_register(CodeTS = referencia), sessionx=sessionx)
                     response = [dict(r) for r in response]
                     if isinstance(response, list) and len(response) == 1:
                         #convierte datetime a string
@@ -122,7 +121,12 @@ async def Open_Cash_Register(
     
 
 @sales_route.get("/get_sales_order_by_cashregistercode/", status_code=200)
-async def Get_Sales_Order_By_CashRegisterCode(cash_register_body: cash_register = Depends(), payload: jwt_dependecy = None):
+async def Get_Sales_Order_By_CashRegisterCode(
+    cash_register_body: cash_register = Depends(), 
+    payload: jwt_dependecy = None,
+    sessionx: Session = Depends(get_db)
+    ):
+
     returned_value = []
     try:
 
@@ -147,7 +151,7 @@ async def Get_Sales_Order_By_CashRegisterCode(cash_register_body: cash_register 
                 .order_by(desc(SalesOrder.c.DocDate))
                 )
 
-        returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
+        returned_value = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
 
         #aqui se hace el artificio para nota de venta
         
@@ -160,25 +164,20 @@ async def Get_Sales_Order_By_CashRegisterCode(cash_register_body: cash_register 
         
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
-    finally:
-        session.close()
-        return returned_value
+    return returned_value
     
 
 @sales_route.get("/get_sales_order_by_ware_and_date/", status_code=200)
@@ -187,7 +186,6 @@ async def Get_Sales_Order_By_Ware_And_Date(
         payload: jwt_dependecy = None,
         sessionx: Session = Depends(get_db)        
         ):
-    #session
     returned_value = {}
     date_current = cash_register_body.Date
     date_bottom = None
@@ -283,7 +281,6 @@ async def Get_Sales_Order_By_Ware_And_Date(
                     "detalle": detalle
                 }
                 
-
             stmt = (select( SalesOrder.c.DocEntry,
                             SalesOrder.c.CashBoxTS.label("CodeTS"),
                             SalesOrder.c.DocNum,
@@ -374,8 +371,6 @@ async def Get_Detail_Sales_Order(
         #Validacion MODULO NATIVO: SLS
         permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
 
-        #session
-        
         if isinstance(permisos, list) and 'SLS_ASR' in permisos: #APRUEBA PERMISO SLS_ASR
             if isinstance(permisos, list) and 'SLS_WDY' in permisos: #APRUEBA PERMISO SLS_WDY, PARA VER TODOS LOS REGISTROS
                 start_date = dt.strptime(cash_register_body.Date, "%Y-%m-%d")
@@ -525,7 +520,10 @@ async def Get_Detail_Sales_Order(
     return returned_value
     
 @sales_route.get("/get_cash_register/", status_code=200)
-async def Get_Cash_Register_By_Param(cash_register_body: cash_register = Depends(), payload: jwt_dependecy = None):
+async def Get_Cash_Register_By_Param(
+                                        cash_register_body: cash_register = Depends(), 
+                                        payload: jwt_dependecy = None,
+                                        sessionx:Session=Depends(get_db)):
     returned_value = []
     try:
         #Validacion si tiene permisos para caja aperturada
@@ -544,34 +542,34 @@ async def Get_Cash_Register_By_Param(cash_register_body: cash_register = Depends
         if cash_register_body.Status is not None:
             stmt = stmt.filter(CashRegister.c.Status == cash_register_body.Status)
 
-        rows = session.execute(stmt).mappings().all()
+        rows = sessionx.execute(stmt).mappings().all()
 
         returned_value = rows if (isinstance(rows, list) and len(rows) > 0) else []
         
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
-    finally:
-        session.close()
-        return returned_value
+        sessionx.rollback()
+    
+    return returned_value
     
 
 @sales_route.get("/get_sale_order_detail/", status_code=200, description="""
     Este endpoint devuelve la información detallada de una orden de venta, 
     y segun bandera retorna documento pdf (cierrefacturacion).
     """)
-async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , payload: jwt_dependecy=None, client: httpx.AsyncClient = Depends(get_http_client)):
+async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , 
+                                      payload: jwt_dependecy=None, 
+                                      client: httpx.AsyncClient = Depends(get_http_client),
+                                      sessionx: Session = Depends(get_db)
+                                      ):
     status_code = 422
     returnedVal = {
                     "message": "Something wrong happen",
@@ -609,7 +607,7 @@ async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , payl
                 .filter(SalesOrder.c.DocEntry == body.DocEntry)
             )
 
-            result = session.execute(stmt).mappings().all()
+            result = sessionx.execute(stmt).mappings().all()
 
             if isinstance(result, list) and len(result) > 0:
                 body=build_body_ticket(result)
@@ -636,11 +634,10 @@ async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , payl
 
             else:
                 returnedVal.update({"message": "Something wrong happen", "data": {}})
-                session.close()
         
         elif body.DocEntry is not None and body.isDocument: # para el caso que se unicamente documento
             #analizamos el tipo de documento para ver si la consulta es al proveedor
-            result = session.execute(
+            result = sessionx.execute(
                     select( SalesOrder.c.DocType,
                             SalesOrder.c.DocDate,
                             DocType.c.SunatCode.label("COD_TIP_CPE"),
@@ -688,7 +685,10 @@ async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , payl
 
             elif result and result["DocType"] in ("NV"):
                 #Obtiene solo nota de venta en pdf por docentry
-                respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=body.DocEntry), payload=payload)
+                respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=body.DocEntry), 
+                                                                      payload=payload,
+                                                                      sessionx=sessionx
+                                                                      )
                 
                 if respuesta.get("pdf", None):
                     returnedVal.update(
@@ -714,17 +714,18 @@ async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , payl
         returnedVal.update({"message": f"An error occurred: {e}", "status": False})
         return returnedVal
     
-    finally:
-        session.close()
-        return JSONResponse(
-        status_code= status_code,
-        content= jsonable_encoder({
-                "data": returnedVal,
-            })
-        )
+    return JSONResponse(
+    status_code= status_code,
+    content= jsonable_encoder({
+            "data": returnedVal,
+        })
+    )
 
 @sales_route.get("/get_all_sales_order_of_cashregister/", status_code=200)
-async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register = Depends(), payload: jwt_dependecy = None):
+async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register = Depends(), 
+                                              payload: jwt_dependecy = None,
+                                              sessionx:Session=Depends(get_db)
+                                              ):
     returned_value = []
     try:
         if cash_register_body.CodeTS is not None:
@@ -744,7 +745,7 @@ async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register 
                 .order_by(asc(SalesOrder.c.DocEntry))
                 )
 
-            rows = session.execute(stmt).mappings().all()
+            rows = sessionx.execute(stmt).mappings().all()
 
             returned_value = rows if (isinstance(rows, list) and len(rows) > 0) else []
         
@@ -753,24 +754,22 @@ async def Get_All_Sales_Order_Of_CashRegister(cash_register_body: cash_register 
         
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
-    finally:
-        session.close()
-        return returned_value
+        sessionx.rollback()
+    return returned_value
 
 @sales_route.get("/get_header_data_cash_register/", status_code=200)
-async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_register = Depends(), flag=True, payload: jwt_dependecy = None):
+async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_register = Depends(), 
+                                                 flag=True, payload: jwt_dependecy = None,
+                                                 sessionx:Session=Depends(get_db)
+                                                 ):
     returned_value = {
         "user": None,
         "OpenDate": None,
@@ -779,7 +778,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
         "status_code": 200
     }
     try:
-        caja_abierta = session.execute(
+        caja_abierta = sessionx.execute(
                 select(CashRegister.c.Status, CashRegister.c.WareID, CashRegister.c.User)
                 .filter(CashRegister.c.CodeTS == cash_register_body.CodeTS)
                 )
@@ -875,7 +874,7 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
                         )
                     )
 
-            row = session.execute(stmt).mappings().one()
+            row = sessionx.execute(stmt).mappings().one()
             row_dict= dict(row)
 
             row_dict["OpenDate"] = row_dict["OpenDate"].strftime("%d/%m")
@@ -894,34 +893,31 @@ async def Get_Header_Data_Cash_Register_By_Param(cash_register_body: cash_regist
         
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback() #no hace efecto por que es consulta
-        session.close()
+        sessionx.rollback() #no hace efecto por que es consulta
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback() #no hace efecto por que es consulta
-        session.close()
+        sessionx.rollback() #no hace efecto por que es consulta
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback() #no hace efecto por que es consulta
-        session.close()
-    finally:
-        session.close()
+        sessionx.rollback() #no hace efecto por que es consulta
 
-        if flag:
-            return JSONResponse(
-                status_code= returned_value["status_code"],
-                content= jsonable_encoder({
-                        "data": returned_value,
-                    })
-            )
-        else:
-            return returned_value
+    if flag:
+        return JSONResponse(
+            status_code= returned_value["status_code"],
+            content= jsonable_encoder({
+                    "data": returned_value,
+                })
+        )
+    else:
+        return returned_value
 
 
 @sales_route.post("/close_cash_register/", status_code=201)
-async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_dependecy = None):
+async def Close_Cash_Register(cash_register_body: cash_register, 
+                              payload: jwt_dependecy = None,
+                              sessionx: Session=Depends(get_db)):
     returned_value = {
         "message": "ok",
         "status_code": 201,
@@ -929,7 +925,7 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
     }
     try:
 
-        caja_abierta = session.execute(
+        caja_abierta = sessionx.execute(
                 select(CashRegister.c.Status, CashRegister.c.WareID, CashRegister.c.User)
                 .filter(CashRegister.c.CodeTS == cash_register_body.CodeTS)
                 )
@@ -941,7 +937,10 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
             #Validacion si tiene permisos para caja aperturada
             create_date = await Get_Time() #<-- obtiene hora
 
-            Montos_totales = await Get_Header_Data_Cash_Register_By_Param(cash_register_body=cash_register_body, flag=False)
+            Montos_totales = await Get_Header_Data_Cash_Register_By_Param(cash_register_body=cash_register_body, 
+                                                                          flag=False,
+                                                                          sessionx=sessionx
+                                                                          )
 
             stmt = (update(CashRegister)
                     .where(CashRegister.c.CodeTS == cash_register_body.CodeTS)
@@ -960,11 +959,11 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                 )
             
             # Ejecutar la instrucción de actualización
-            result = session.execute(stmt)
+            result = sessionx.execute(stmt)
 
             if result.rowcount > 0:
 
-                session.commit()
+                sessionx.commit()
 
                 ##################### GRABA CIERRE DE CAJA
                 ##################### INICIA GENERACIONDE TICKET PDF
@@ -989,9 +988,10 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                                )
                         .filter(CashRegister.c.CodeTS == cash_register_body.CodeTS))
                 
-                response = session.execute(stmt).mappings().all()
+                response = sessionx.execute(stmt).mappings().all()
             
-                items = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS))
+                items = await Get_All_Sales_Order_Of_CashRegister(cash_register_body=cash_register(CodeTS = cash_register_body.CodeTS),
+                                                                  sessionx=sessionx)
                 header = [
                             {
                             "caja": idx["caja"].to_eng_string(),
@@ -1034,8 +1034,7 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                     "status_code": 201,
                     "message": "No se hizo ningun cambio"
                 })
-                session.rollback()
-
+                sessionx.rollback()
 
         elif (isinstance(rows, list) and len(rows) > 0 and rows[0]["Status"] == 'C'):
             returned_value.update({
@@ -1055,29 +1054,30 @@ async def Close_Cash_Register(cash_register_body: cash_register, payload: jwt_de
                                 "message": f"An error ocurred: {e}",
                                 "status_code": 422
                                 })
-        session.rollback() #no hace efecto por que es consulta
-        session.close()
+        sessionx.rollback() #no hace efecto por que es consulta
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback() #no hace efecto por que es consulta
-        session.close()
+        sessionx.rollback() #no hace efecto por que es consulta
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback() #no hace efecto por que es consulta
-        session.close()
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code= returned_value["status_code"],
-            content= {
-                    "data": returned_value,
-                }
-        )
+        sessionx.rollback() #no hace efecto por que es consulta
+
+    return JSONResponse(
+        status_code= returned_value["status_code"],
+        content= {
+                "data": returned_value,
+            }
+    )
       
 @sales_route.post("/create_external_sales_document/", status_code=201)
-async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_internal_def, payload: jwt_dependecy = None, client: httpx.AsyncClient = Depends(get_http_client)):
+async def Crear_Documento_Externo_De_Venta(body=sales_order, 
+                                           series=series_internal_def, 
+                                           payload: jwt_dependecy = None, 
+                                           client: httpx.AsyncClient = Depends(get_http_client),
+                                           sessionx: Session = Depends(get_db)
+                                           ):
 
     returnedValue={"message": "Error indeterminado",
                    "status_code": 422,
@@ -1105,7 +1105,7 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
                     )
                 )
 
-        customer = session.execute(stmt).mappings().first()
+        customer = sessionx.execute(stmt).mappings().first()
         
         #OBTIENE DATOS DEL DOCUMENTO (FACTURA, BOLETA, NOTA D CREDITO)
         stmt = (
@@ -1116,16 +1116,16 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
                 )
 
 
-        doctype_code = session.execute(stmt).mappings().first()
+        doctype_code = sessionx.execute(stmt).mappings().first()
         
         #OBTIENE CODIGOS DE AFECTACION Y TRIBUTOS
         stmt = (select(OAFV))
-        oafv_list = session.execute(stmt).mappings().all()
+        oafv_list = sessionx.execute(stmt).mappings().all()
         
         #OBTIENE NOMBRE FORMA DE PAGO
         stmt = (select(PymntGroup.c.PymntGroupName.label("forma_pago_nombre")).filter(PymntGroup.c.PymntGroup == body.forma_pago))
 
-        pymntgroup_name = session.execute(stmt).mappings().first()
+        pymntgroup_name = sessionx.execute(stmt).mappings().first()
 
         if customer and doctype_code and len(oafv_list) and pymntgroup_name: #verifica si cliente existe y si existe codigo de documento y si existe codigos tributarios
             
@@ -1298,19 +1298,17 @@ async def Crear_Documento_Externo_De_Venta(body=sales_order, series=series_inter
         return returnedValue
 
     except Exception as e:
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returnedValue.update({"message": f"An error ocurred: {e}"})
         returnedValue.update({"status_code": 422})
         return returnedValue
-    finally:
-
-        session.close()
-
 
 
 @sales_route.post("/register_external_document_state/", status_code=201)
-async def Registrar_Estado_Documento_Externo(body=external_document, payload: jwt_dependecy = None):
+async def Registrar_Estado_Documento_Externo(body=external_document, 
+                                             payload: jwt_dependecy = None,
+                                             sessionx: Session = Depends(get_db)
+                                             ):
 
     returnedValue={"message": "Error indeterminado",
                    "status_code": 422,
@@ -1332,39 +1330,37 @@ async def Registrar_Estado_Documento_Externo(body=external_document, payload: jw
                     )
             )
 
-            affected = session.execute(stmt)
+            affected = sessionx.execute(stmt)
 
             if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅, EMPIEZA CON REGISTRO DE LINEAS HIJAS
                 returnedValue.update({"message": f"Registro Sunat creado, Estado: {str(body.Status)}"})
                 returnedValue.update({"status_code": 201})
-                session.commit()
+                sessionx.commit()
             else:
-                session.rollback()
-                session.close()
+                sessionx.rollback()
                 returnedValue.update({"message": "Error durante registro de documento externo en sistema"})
                 returnedValue.update({"status_code": 422})
 
         else:
-            session.rollback()
-            session.close()
+            sessionx.rollback()
             returnedValue.update({"message": "DocEntry o Status Sunat incorrecto"})
             returnedValue.update({"status_code": 422})
 
         return returnedValue
 
     except Exception as e:
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returnedValue.update({"message": f"An error ocurred: {e}"})
         returnedValue.update({"status_code": 422})
         return returnedValue
-    finally:
-
-        session.close()
 
 
 @sales_route.post("/create_internal_sales_document/", status_code=201)
-async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_internal_def, payload: jwt_dependecy = None):
+async def Crear_Documento_Interno_De_Venta(body=sales_order, 
+                                           series=series_internal_def, 
+                                           payload: jwt_dependecy = None,
+                                           sessionx: Session= Depends(get_db)
+                                           ):
 
     returnedValue={"message": "Error indeterminado",
                    "status_code": 422,
@@ -1414,7 +1410,7 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
                         idWare=body.id_ware
                     )
             )
-            affected = session.execute(stmt)
+            affected = sessionx.execute(stmt)
 
             if affected.rowcount > 0:  #filas afectadas mayor a 0 ✅, EMPIEZA CON REGISTRO DE LINEAS HIJAS
                 docentry = affected.inserted_primary_key[0] #DocEntry del padre
@@ -1441,7 +1437,7 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
                                 UpdateDate=None
                             )
                     )
-                    res_contact = session.execute(stmt1)
+                    res_contact = sessionx.execute(stmt1)
                     if (res_contact.rowcount > 0):
                         grabo_fila += 1
                         # print(f"Grabo salesorder linea: {lineNum}") 
@@ -1461,7 +1457,7 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
                             )
 
                     stmt = text(f"UPDATE ware_product set qtyNew = qtyNew - :qtyN, editDate = :editDa where idProduct = :idPro and idWare = :idWa")
-                    response = session.execute(stmt, params)
+                    response = sessionx.execute(stmt, params)
                     if (response.rowcount > 0):
                         # print(f"Actualizo filas en warehouse_product: {response.rowcount}") 
                         #ACTUALIZAR ULTIMO CORRELATIVO 
@@ -1474,7 +1470,7 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
                             )
                         )
 
-                        res_docseries = session.execute(stmt)
+                        res_docseries = sessionx.execute(stmt)
 
                         if (res_docseries.rowcount > 0):
                             cant_items = 0
@@ -1482,7 +1478,7 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
                                 cant_items += int(item.qty)
                             
                             stmt = (select(Company.c.docName).filter(Company.c.cardCode == body.receptor_cod))
-                            response = session.execute(stmt).mappings().one()
+                            response = sessionx.execute(stmt).mappings().one()
                             #response: {'docName': 'VARIOS'}
 
                             returnedValue.update({"message": f"Orden de venta aceptada DocEntry: {numero_documento}"})
@@ -1497,53 +1493,47 @@ async def Crear_Documento_Interno_De_Venta(body=sales_order, series=series_inter
                                 "cliente": response["docName"] or ""
                             }})
                             returnedValue.update({"status_code": 201})
-                            session.commit() #AQUI TERMINA TODO CON UN COMMIT 🎭🎭🎭
-                            session.close()
+                            sessionx.commit() #AQUI TERMINA TODO CON UN COMMIT 🎭🎭🎭
                         else:
-                            session.rollback()
-                            session.close()
+                            sessionx.rollback()
                             returnedValue.update({"message": "Error: No actualizo correlativo, fase ultima de commit"})
                             returnedValue.update({"status_code": 422})
                     else:
-                        session.rollback()
-                        session.close()
+                        sessionx.rollback()
                         returnedValue.update({"message": "Error: No desconto cantidades de almacen"})
                         returnedValue.update({"status_code": 422})
                         
                 else:
-                    session.rollback()
-                    session.close()
+                    sessionx.rollback()
                     returnedValue.update({"message": "Error: No grabo detalle de documento"})
                     returnedValue.update({"status_code": 422})
 
             else:
-                session.rollback()
-                session.close()
+                sessionx.rollback()
                 returnedValue.update({"message": "Error: No se grabo cabecera"})
                 returnedValue.update({"status_code": 422})
         else:
-            session.rollback()
-            session.close()
+            sessionx.rollback()
             returnedValue.update({"message": "Documento no contiene items"})
             returnedValue.update({"status_code": 422})
 
         return returnedValue
 
     except Exception as e:
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returnedValue.update({"message": f"An error ocurred: {e}"})
         returnedValue.update({"status_code": 422})
         return returnedValue
-    finally:
 
-        session.close()
 
 
 @sales_route.get("/get_pdf_for_sales_note/", status_code=200, description="""
     Obtiene el pdf en bytes de nota de venta con el docentry.
     """)
-async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, payload: jwt_dependecy):
+async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, 
+                                              payload: jwt_dependecy,
+                                              sessionx:Session=Depends(get_db)
+                                              ):
     try:
         stmt = (
                     select(SalesOrder.c.DocNum.label("doc_num"), 
@@ -1569,7 +1559,7 @@ async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, payload: j
                     .filter(and_(SalesOrder.c.DocEntry == body.DocEntry, SalesOrder.c.DocType == 'NV')) #tiene que ser nota de venta si o si
                 )
         
-        result = session.execute(stmt).mappings().all()
+        result = sessionx.execute(stmt).mappings().all()
 
         if result:
             respuesta = await Crear_Ticket_PDF(body=build_body_ticket(result), payload=payload)
@@ -1591,29 +1581,28 @@ async def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document, payload: j
         
     except Exception as e:
         print(f"An error ocurred: {e}")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
         print(f"""Detalle SQLAlchemy: {e.orig}""")
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
     except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
         print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         returned_value = []
 
-    finally:
-        session.close()
-        return returned_value
+    return returned_value
 
 
 @sales_route.post("/create_sales_order/", status_code=201)
-async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: httpx.AsyncClient = Depends(get_http_client)):
+async def Crear_Orden_Venta(body:sales_order, 
+                            payload: jwt_dependecy, 
+                            client: httpx.AsyncClient = Depends(get_http_client),
+                            sessionx:Session=Depends(get_db)
+                            ):
     #ABSORVE URL
     pdf_url = ""
     #PDF BYTES
@@ -1623,7 +1612,7 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
         if body.codigo_caja is not None: #venta por caja
 
             #VERIFICAMOS CAJA VALIDA
-            caja_abierta = session.execute(
+            caja_abierta = sessionx.execute(
                     select(CashRegister.c.Status, CashRegister.c.WareID, CashRegister.c.User)
                     .filter(and_(CashRegister.c.CodeTS == body.codigo_caja,
                                 CashRegister.c.WareID == body.id_ware,
@@ -1645,7 +1634,7 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
             else:
                 #OBTENER CORRELATIVO
                 #CONSULTA Y BLOQUEA FILA DE SERIE
-                response = session.execute(
+                response = sessionx.execute(
                     select(DocSeries.c.Prefix, DocSeries.c.NextNumber)
                     .filter(DocSeries.c.DocTypeCode == body.doc_tipo,
                             DocSeries.c.WareCode == body.id_ware,
@@ -1685,7 +1674,11 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
                 #CREA DOCUMENTO NUBEFACT
                 if body.doc_tipo in ('FAC', 'BOL'):
 
-                    response =  await Crear_Documento_Externo_De_Venta(client=client, body=body, series=series, payload=payload) #creacion externa
+                    response =  await Crear_Documento_Externo_De_Venta(client=client, 
+                                                                       body=body, 
+                                                                       series=series, 
+                                                                       payload=payload,
+                                                                       sessionx=sessionx) #creacion externa
                     status_code_doc = response.get("status_code", 422)
                     msg = response.get("message", "Error on Sales Route Line 1390")
                     data = response.get("data", {})
@@ -1702,7 +1695,10 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
                 if status_code_doc == 201: #verifica si creo documento externo
                 
                     #CREA DOCUMENTO INTERNO
-                    response =  await Crear_Documento_Interno_De_Venta(body=body, series=series, payload=payload) #creacion interna
+                    response =  await Crear_Documento_Interno_De_Venta(body=body, 
+                                                                       series=series, 
+                                                                       payload=payload,
+                                                                       sessionx=sessionx) #creacion interna
 
                     #REGISTRAR DOCUMENTO EXTERNO
                     if (isinstance(data, dict) and data) and body.doc_tipo in ('FAC', 'BOL') and response["status_code"] == 201:
@@ -1718,7 +1714,9 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
 
                         data = external_document(**params)
 
-                        response_x =  await Registrar_Estado_Documento_Externo(body=data, payload=payload) #creacion interna
+                        response_x =  await Registrar_Estado_Documento_Externo(body=data, 
+                                                                               payload=payload,
+                                                                               sessionx=sessionx) #creacion interna
                         
                         response={
                             "message": f"""Interno: {response["message"]} | Externo-Interno: {response_x["message"]}""",
@@ -1735,7 +1733,9 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
                 
                     if response["status_code"] == 201 and body.doc_tipo in ('NV'):
 
-                        respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=response["data"]["docentry"]), payload=payload)
+                        respuesta = await Obtener_PDF_Nota_Venta_Por_DocEntry(body=external_document(DocEntry=response["data"]["docentry"]), 
+                                                                              payload=payload,
+                                                                              sessionx=sessionx)
             
                         return JSONResponse(
                             status_code= response["status_code"],
@@ -1795,8 +1795,6 @@ async def Crear_Orden_Venta(body:sales_order, payload: jwt_dependecy, client: ht
                 "url": None
             }
         )
-    finally:
-        session.close()
 
 
     
@@ -2106,11 +2104,6 @@ async def Crear_Cierre_Ticket_PDF(body:Body_Ticket_Close, payload: jwt_dependecy
     
     
 
-
-
-
-
-
 # @sales_route.post("/sincronizar_documentos/", status_code=201)
 async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
 
@@ -2119,47 +2112,51 @@ async def sincronizacion_diaria_madrugada(client: httpx.AsyncClient):
     today = dt.strptime(today_server["lima_transfer_format"], "%Y-%m-%d")
     start_date = today - timedelta(days=2)  # TOMA LOS DOS DIAS ANTERIORES
 
-    stmt = (select( 
-                SalesOrder.c.DocEntry,
-                #Serie
-                func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
-                #Correlativo
-                func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"),
-                DocType.c.SunatCode.label("COD_TIP_CPE"),
-                SalesOrder.c.DocDate.label("FEC_EMIS"),
-                SalesOrderSunat.c.Status.label("estado_documento")
+    with SessionLocal() as db:
+        try:
+            stmt = (select( 
+                        SalesOrder.c.DocEntry,
+                        #Serie
+                        func.substring_index(SalesOrder.c.DocNum, '-', 1).label("NUM_SERIE_CPE"),
+                        #Correlativo
+                        func.substring_index(SalesOrder.c.DocNum, '-', -1).label("NUM_CORRE_CPE"),
+                        DocType.c.SunatCode.label("COD_TIP_CPE"),
+                        SalesOrder.c.DocDate.label("FEC_EMIS"),
+                        SalesOrderSunat.c.Status.label("estado_documento")
+                        )
+                .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
+                .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
+                .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
+                .filter(and_(SunatCodes.c.IsFinal == 2,
+                            SalesOrder.c.DocDate >= start_date))
+                .order_by(asc(SalesOrder.c.DocEntry))
                 )
-        .join(DocType, SalesOrder.c.DocType == DocType.c.DocTypeCode)
-        .join(SalesOrderSunat, SalesOrder.c.DocEntry == SalesOrderSunat.c.DocEntry)
-        .join(SunatCodes, SalesOrderSunat.c.Status == SunatCodes.c.Code)
-        .filter(and_(SunatCodes.c.IsFinal == 2,
-                     SalesOrder.c.DocDate >= start_date))
-        .order_by(asc(SalesOrder.c.DocEntry))
-        )
+            
+            returned_value = [dict(r) for r in db.execute(stmt).mappings().all()]
+
+            for row in returned_value:
+                row["FEC_EMIS"] = row["FEC_EMIS"].strftime("%Y-%m-%d")
+
+
+            result  = await sincronizar_documentos_pendientes(client= client, docList=returned_value, time=today_server["lima_bd_format"])
+
+            len_cambios =  len(result) if isinstance(result, list) else None
+            if len_cambios:
+                stmt = text(f"UPDATE SalesOrderSunat set Status = :Status, UpdateDate = :UpdateDate where DocEntry = :DocEntry")
+                
+                response = db.execute(stmt, result)
+
+                if response.rowcount > 0:
+                    db.commit()
+                    print(f"Se efectuaron {len_cambios} cambios durante sincronización...")
+                else:
+                    print("No se efectuaron cambios durante sincronización...")
+
+            else:
+                print("No se efectuaron cambios durante sincronización...")
     
-    returned_value = [dict(r) for r in session.execute(stmt).mappings().all()]
-
-    for row in returned_value:
-        row["FEC_EMIS"] = row["FEC_EMIS"].strftime("%Y-%m-%d")
-
-
-    result  = await sincronizar_documentos_pendientes(client= client, docList=returned_value, time=today_server["lima_bd_format"])
-
-    len_cambios =  len(result) if isinstance(result, list) else None
-    if len_cambios:
-        stmt = text(f"UPDATE SalesOrderSunat set Status = :Status, UpdateDate = :UpdateDate where DocEntry = :DocEntry")
-        
-        response = session.execute(stmt, result)
-
-        if response.rowcount > 0:
-            session.commit()
-            session.close()
-            print(f"Se efectuaron {len_cambios} cambios durante sincronización...")
-        else:
-            session.close()
-            print("No se efectuaron cambios durante sincronización...")
-
-    else:
-        print("No se efectuaron cambios durante sincronización...")
+        except Exception as e:
+                db.rollback() # Si algo falla, deshacemos cambios
+                print(f"Error en la sincronización: {e}")
 
 

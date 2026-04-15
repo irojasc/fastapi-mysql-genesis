@@ -7,8 +7,9 @@ from functions.prices import get_all_pricelist_format
 from functions.catalogs import normalize_last_sync
 from routes.catalogs import Get_Time, Get_Taxes
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session
+from config.db import get_db
 from datetime import date, datetime
+from sqlalchemy.orm import Session
 import json
 
 price_route = APIRouter(
@@ -18,7 +19,9 @@ price_route = APIRouter(
 
 
 @price_route.get("/list_and_relations/")
-async def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None):
+async def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None,
+                                      sessionx:Session=Depends(get_db)
+                                      ):
     returned_value = False
     try:
         #HORA CONSULTA
@@ -28,7 +31,7 @@ async def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None):
                 join(Ware, Ware_Product.c.idWare == Ware.c.id).
                 order_by(Ware.c.code)
                 )
-        returned_value = session.execute(stmt).mappings().all()
+        returned_value = sessionx.execute(stmt).mappings().all()
         returned_value = get_all_pricelist_format(data=returned_value) #obtiene todos los precios del almacen, esto falta migrar a otra tabla
         
         #NO SE PUEDE GESTIONAR DELETE DESDE ESTE CASO POR QUE EL PRECIO ESTA AMARRADO AL DATO DE ALMACEN
@@ -54,17 +57,18 @@ async def Get_PriceList_And_Relations(jwt_dependency: jwt_dependecy = None):
             returned_value = True #valida que se exporto el archivo
 
     except Exception as e:
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
         returned_value = False
-    finally:
-        session.close()
-        return returned_value
+
+    return returned_value
 
 
 @price_route.get("/lastchanges", status_code=200)
-async def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), jwt_dependency: jwt_dependecy = None):
+async def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., description="Formato esperado: YYYY-MM-DDTHH:MM:SSZ (ISO8601)"), 
+                                      jwt_dependency: jwt_dependecy = None,
+                                      sessionx:Session=Depends(get_db)
+                                      ):
     returned_value = {}
     try:
         #QUITA 5 MINUTOS PARA REALIZAR LA CONSULTA
@@ -78,13 +82,13 @@ async def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., descripti
                 .order_by(Ware.c.code)
                 )
 
-        returned_value = session.execute(stmt).mappings().all()
+        returned_value = sessionx.execute(stmt).mappings().all()
         returned_value = get_all_pricelist_format(data=returned_value) #obtiene todos los precios del almacen, esto falta migrar a otra tabla
         #HORA CONSULTA
         utc_time = await Get_Time()
 
         #CONSULTA DATOS IMPUESTOS
-        sell_taxes = await Get_Taxes(type='s')
+        sell_taxes = await Get_Taxes(type='s', sessionx=sessionx)
 
 
         if isinstance(returned_value, dict):
@@ -93,10 +97,8 @@ async def Get_Last_Price_List_Changes(last_sync: datetime = Query(..., descripti
             returned_value.update({"sell_taxes": sell_taxes})
         
     except Exception as e:
-        session.rollback()
-        session.close()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
         returned_value = {}
-    finally:
-        session.close()
-        return returned_value
+
+    return returned_value

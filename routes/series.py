@@ -7,11 +7,11 @@ from sqlmodel.docseries import DocSeries
 from sqlmodel.doctype import DocType
 from sqlmodel.ware import Ware
 from basemodel.series import series_request, series_create_request
-from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close
+# from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
-from config.db import con, session, get_db
+from config.db import get_db
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
@@ -28,8 +28,6 @@ async def Get_Series_Data_By_Ware(
     payload: jwt_dependecy = None,
     sessionx:Session=Depends(get_db)
     ):
-
-    #session
 
     returned_value = {}
     try:
@@ -121,8 +119,6 @@ async def Get_Series_By_Code(
     sessionx: Session = Depends(get_db)
     ):
 
-    #session
-    
     status_code = 200
     returned_value = {}
     try:
@@ -294,7 +290,6 @@ async def Create_Serie(
     returned_value = {}
     try:
         permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
-        #session
         if isinstance(permisos, list) and 'SLS_CSR' in permisos: #Modo crear
             
             async def create_serie(body_x: series_create_request = None, user=None):
@@ -442,7 +437,6 @@ async def Edit_Serie_By_Code(
     returned_value = {}
     try:
         permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
-        #session
         if isinstance(permisos, list) and 'SLS_ESR' in permisos: #Modo editar
             
             async def edit_serie(body_x: series_create_request = None, user=None):
@@ -592,7 +586,6 @@ async def Delete_Series_By_Code(
     try:
         #Validacion MODULO NATIVO: SLS
         permisos = await get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
-        #session
         
         if isinstance(permisos, list) and 'SLS_DSR' in permisos: #VERIFICA PERMISO VER SERIES
        

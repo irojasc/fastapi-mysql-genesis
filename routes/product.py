@@ -6,14 +6,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, func, insert, update
 from typing import Optional
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session, CREDENTIALS_JSON, BUCKET_NAME, AWS_REGION, get_db
+from config.db import CREDENTIALS_JSON, BUCKET_NAME, AWS_REGION, get_db
 from config.s3_aws import get_s3_client
 from sqlmodel.product import Product
 from sqlmodel.uploads import Uploads
 from sqlmodel.objectfiles import ObjectFiles
 from sqlmodel.ware_product import Ware_Product
 from sqlmodel.user_perm_mdl import User_perm_mdl
-from functions.product import get_all_publishers, generate_filename
+# from functions.product import get_all_publishers, generate_filename
+from functions.product import generate_filename
 from google.oauth2.service_account import Credentials
 from google.auth.exceptions import GoogleAuthError
 from gspread.exceptions import GSpreadException
@@ -64,6 +65,7 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
                                 Title: Optional[str] = "",
                                 Autor: Optional[str] = "",
                                 Publisher: Optional[str] = "",
+                                sessionx:Session=Depends(get_db)
                                 ):
     # if not(jwt_dependency):
     if not(True):
@@ -88,7 +90,7 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
                 and wr.enabled = 1
                 group by wp.idProduct , pr.isbn, pr.title, pr.publisher, wr.code, wp.pvNew, wp.isEnabled, wp.qtyNew 
                 order by wp.idProduct asc"""
-                stock = session.execute(select(text(query)))
+                stock = sessionx.execute(select(text(query)))
                 data = stock.fetchall()
                 # result = []
                 for item in data:
@@ -118,21 +120,23 @@ async def get_stock_by_product_attribute(jwt_dependency: jwt_dependecy,
             else:
                 raise HTTPException(status_code=404, detail='Nothing to show you')
         except:
-            session.rollback()
+            sessionx.rollback()
             # raise HTTPException(status_code=404, detail='Nothing to show you')
             # raise
-        finally:
-            session.close()
-            if not status:
-                raise HTTPException(status_code=404, detail='Nothing to show you')
-            elif status:
-                return JSONResponse(
-                status_code=200,
-                content={"result": result}
-                )
+  
+        if not status:
+            raise HTTPException(status_code=404, detail='Nothing to show you')
+        elif status:
+            return JSONResponse(
+            status_code=200,
+            content={"result": result}
+            )
         
 @product_route.post("/request_maintenance", status_code=200)
-async def request_product_maintenance(jwt_dependency: jwt_dependecy, product_maintenance: product_maintenance):
+async def request_product_maintenance(jwt_dependency: jwt_dependecy, 
+                                      product_maintenance: product_maintenance,
+                                      sessionx:Session=Depends(get_db)
+                                      ):
     data = [
         product_maintenance.code,
         product_maintenance.isbn ,
@@ -172,25 +176,29 @@ async def request_product_maintenance(jwt_dependency: jwt_dependecy, product_mai
         return {"state": True}
 
 @product_route.delete("/", status_code=200)
-async def delete_product(jwt_dependency: jwt_dependecy, idProduct: str = None, curDate: str = None, nameModule: str = None):
+async def delete_product(jwt_dependency: jwt_dependecy, 
+                         idProduct: str = None, 
+                         curDate: str = None, 
+                         nameModule: str = None,
+                         sessionx:Session=Depends(get_db)
+                         ):
     #cuando jwt_dependency es false, es por que el token ya vencio
     if jwt_dependency[0]:
         try:
             #verificamos que no exista stock
-            stock_exits = session.query(func.sum(Ware_Product.c.qtyNew)).filter(Ware_Product.c.idProduct == idProduct).scalar()
+            stock_exits = sessionx.query(func.sum(Ware_Product.c.qtyNew)).filter(Ware_Product.c.idProduct == idProduct).scalar()
             if stock_exits == 0:
-                response = session.query(User_perm_mdl).filter(User_perm_mdl.c.mdlCode == nameModule, 
+                response = sessionx.query(User_perm_mdl).filter(User_perm_mdl.c.mdlCode == nameModule, 
                                                     User_perm_mdl.c.permCode == 'DPR',
                                                     User_perm_mdl.c.user == jwt_dependency[1]).first()
                 if response is not None:
                     try:
                         if((idProduct is not None and curDate is not None) and (idProduct != '' and curDate != '')):
-                            rows_affected = session.query(Product).filter(Product.c.id == idProduct).update({
+                            rows_affected = sessionx.query(Product).filter(Product.c.id == idProduct).update({
                                 "isDelete": b'\x01',
                                 "editDate": curDate})
                             
-                            session.commit()
-                            session.close()
+                            sessionx.commit()
                             return {
                                 'status': 'ok'
                             }
@@ -201,23 +209,19 @@ async def delete_product(jwt_dependency: jwt_dependecy, idProduct: str = None, c
                             )
                     except Exception as e:
                         print(f"delete_product: {e}")
-                        session.close()
                         return False
                 else:
-                    session.close()
                     return JSONResponse(
                         status_code=401,
                         content={"message": 'Unauthorized', "status": "No tiene permisos para esta operación", "code": 401}
                     )
             else:
-                session.close()
                 return JSONResponse(
                     status_code=401,
                     content={"message": 'Unauthorized', "status": "El producto contiene stock, primero regularice", "code": 401}
                 )
         except SQLAlchemyError as e:
-            session.rollback()
-            session.close()
+            sessionx.rollback()
             print(f"SQLAlchemy error occurred: {e}")
     else:
         return JSONResponse(
@@ -531,7 +535,6 @@ async def confirmar_archivo_de_producto(
             # sessionx.rollback()
             returned_value.update({"message": "Error durante actualizacion de dato FileName en tabla maestra ITEM"})
             raise ValueError("Error al actualizar FileName en tabla maestra ITEM")
-            # raise RuntimeError("Error durante actualizacion de dato FileName en tabla maestra ITEM")
         
         sessionx.commit()
 
@@ -559,11 +562,9 @@ async def confirmar_archivo_de_producto(
         returned_value.update({"message": f"Error intentando eliminar la version anterior: {str(e)}"})
         sessionx.rollback()
         status_code = 422
-        # sessionx.close()
 
     except Exception as e:
         sessionx.rollback()
-        # sessionx.close()
         returned_value.update({
             "message": f"An error ocurred: {str(e)}"
         })
@@ -573,8 +574,5 @@ async def confirmar_archivo_de_producto(
         status_code= status_code,
         content= returned_value
     )
-    
-    # finally:
-        # sessionx.close()
 
         

@@ -4,7 +4,6 @@ from sqlalchemy import select, asc, insert, func
 from sqlalchemy.exc import SQLAlchemyError
 from utils.validate_jwt import jwt_dependecy
 from sqlmodel.user import User
-# from config.db import con, session
 from functions.inventory import changeBin2Bool
 from basemodel.user import new_user
 from utils.hash_handler import hash_password
@@ -18,9 +17,9 @@ user_route = APIRouter(
 
 @user_route.get("/")
 # def get_users(access_token: Annotated[str | None, Cookie()] = None):
-def get_users(jwt_dependency: jwt_dependecy, session: Session = Depends(get_db)):
+def get_users(jwt_dependency: jwt_dependecy, sessionx: Session = Depends(get_db)):
     try:
-        data_usrs = session.query(
+        data_usrs = sessionx.query(
             User.c.id, 
             User.c.idDoc, 
             User.c.userName, 
@@ -50,12 +49,12 @@ def get_users(jwt_dependency: jwt_dependecy, session: Session = Depends(get_db))
 
         
 @user_route.post("/", status_code=201)
-async def get_last_row(jwt_dependency: jwt_dependecy, new_user: new_user, session: Session = Depends(get_db)):
+async def get_last_row(jwt_dependency: jwt_dependecy, new_user: new_user, sessionx: Session = Depends(get_db)):
     try:
-        # max_id = session.query(func.max(User.c.id)).first()
+        # max_id = sessionx.query(func.max(User.c.id)).first()
         #🎃 1|CUIDADO # SI VARIAS PERSONAS CREAN PUEDE HABER DUPLICIDAD DE ID, LO MEJOR ES CONGELAR MIENTRAS SE CONSULTA
         #🎃 2|CUIDADO # TAMBIEN SE TIENE QUE CAMBIAR LA FECHA Y HORA DE EDICION O CREACION CON EL DEL SERVIDOR
-        max_id = session.query(func.max(User.c.id)).scalar()
+        max_id = sessionx.query(func.max(User.c.id)).scalar()
         next_id = (max_id or 0) + 1
 
         stmt = (
@@ -74,13 +73,13 @@ async def get_last_row(jwt_dependency: jwt_dependecy, new_user: new_user, sessio
                 )
         
         # 3. Ejecutar y persistir
-        session.execute(stmt)
-        session.commit()
+        sessionx.execute(stmt)
+        sessionx.commit()
         
         return {"status": "success", "message": "Usuario creado", 'id': next_id}
     
     except SQLAlchemyError as e:
-        session.rollback()
+        sessionx.rollback()
         # Logueamos el error real en consola para debugging
         print(f"SQLAlchemy Error: {e}")
         raise HTTPException(
@@ -89,7 +88,7 @@ async def get_last_row(jwt_dependency: jwt_dependecy, new_user: new_user, sessio
         )
     
     except Exception as e:
-        session.rollback()
+        sessionx.rollback()
         print(f"Unexpected Error: {e}")
         raise HTTPException(
             status_code=500, 

@@ -11,20 +11,17 @@ engine = create_engine("mysql+pymysql://{}:{}@{}:{}/{}".format(
     os.getenv("DB_PORT", default=None),
     os.getenv("DB_DATABASE", default=None),
         ),
-    pool_pre_ping= True,
-    pool_recycle=3600,
+    pool_pre_ping= True
     )
-Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
-    db = Session()
+    db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-
-session = Session()
 meta = MetaData()
 con = engine.connect()
 SECRET_KEY = os.getenv("SECRET_KEY", default=None)

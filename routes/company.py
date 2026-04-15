@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, asc, func, insert, and_, or_, update
 from sqlalchemy.dialects.mysql import insert as insert_dialect
 from utils.validate_jwt import jwt_dependecy
-from config.db import con, session, get_db
+from config.db import get_db
 from sqlmodel.company import Company
 from sqlmodel.banks import Banks
 from sqlmodel.paymentterms import PaymentTerms
@@ -41,7 +41,6 @@ async def Get_Business_Partner_By_CardCode(
     """La parte de obtener Business partner por CardCode no esta desarrollada"""
     returnedValue = {"body": {}, "message": "ok"}
     status_code = 200
-    #session
     try:
         if CardCode is not None:
             permisos = await get_user_permissions_by_module(user=jwt_dependency.get("username"), module='SLS', sessionx=sessionx)
@@ -170,7 +169,11 @@ async def Get_Business_Partner_By_CardCode(
 # Currency = BusinessPartner.moneda or None 🎃
 
 @company_route.patch("/business_partner/", status_code=201)
-async def Edit_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency: jwt_dependecy = None):
+async def Edit_Business_Partner(
+        BusinessPartner: BusinessPartner, 
+        jwt_dependency: jwt_dependecy = None,
+        sessionx:Session=Depends(get_db)
+        ):
     returnedValue = {"body": {}, "message": "Socio actualizado!!"}
     status_code = 201
     try:
@@ -178,7 +181,7 @@ async def Edit_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency
         create_date = await Get_Time()
 
         #OBTIENE EL IDUBIGEO
-        ubigeo = session.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
+        ubigeo = sessionx.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
                 filter(Ubigeo.c.dep_id == BusinessPartner.departamento). \
                 filter(Ubigeo.c.pro_id == BusinessPartner.provincia). \
                 filter(Ubigeo.c.dis_id == BusinessPartner.distrito). \
@@ -198,8 +201,8 @@ async def Edit_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency
             )
         )
 
-        res_partner = session.execute(stmt)
-        session.commit()
+        res_partner = sessionx.execute(stmt)
+        sessionx.commit()
         rowsAffected = res_partner.rowcount
         if(rowsAffected > 0): #VERIFICA QUE REGISTRA SOCIO PARA REGISTRAR CONTACTOS Y CUENTAS
             if len(BusinessPartner.contactos) > 0:
@@ -224,7 +227,7 @@ async def Edit_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency
                         updateDate=stmt.inserted.creationDate,
                     )
 
-                    res = session.execute(upsert_stmt)
+                    res = sessionx.execute(upsert_stmt)
 
                     if res.rowcount > 0:
                         print(f"Contacto procesado: {contact.nombre}")
@@ -232,13 +235,13 @@ async def Edit_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency
                         returnedValue.update({"message": "Error al intentar grabar contactos"})
                         break
                 
-                session.commit()
+                sessionx.commit()
 
             else:
                 print("No aplica cambios en contactos")
 
             #RETORNAR SOCIO CREADO
-            value = await Get_All_Business_Partners_By_Param(CardCode=BusinessPartner.codigo_socio)
+            value = await Get_All_Business_Partners_By_Param(CardCode=BusinessPartner.codigo_socio, sessionx=sessionx)
             returnedValue.update({"body": value})
 
         else:
@@ -246,19 +249,22 @@ async def Edit_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency
             returnedValue.update({"message": "Error al editar socio"})
 
     except Exception as e:
-        session.rollback()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
         returnedValue.update({"message": f"An error ocurred: {e}"})
         status_code=422,
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code= status_code[0] if isinstance(status_code, tuple) else status_code,
-            content=returnedValue
-        )
+    
+    return JSONResponse(
+        status_code= status_code[0] if isinstance(status_code, tuple) else status_code,
+        content=returnedValue
+    )
     
 @company_route.post("/business_partner/", status_code=201)
-async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_dependency: jwt_dependecy = None):
+async def Create_New_Business_Partner(
+    BusinessPartner: BusinessPartner, 
+    jwt_dependency: jwt_dependecy = None,
+    sessionx:Session=Depends(get_db)
+    ):
     returnedValue = {"body": {}, "message": "Socio creado!!"}
     status_code = 201
     try:
@@ -266,7 +272,7 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
         create_date = await Get_Time()
 
         #OBTIENE EL IDUBIGEO
-        ubigeo = session.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
+        ubigeo = sessionx.query(Ubigeo.c.idUbigeo, Ubigeo.c.dis_name).\
                 filter(Ubigeo.c.dep_id == BusinessPartner.departamento). \
                 filter(Ubigeo.c.pro_id == BusinessPartner.provincia). \
                 filter(Ubigeo.c.dis_id == BusinessPartner.distrito). \
@@ -293,8 +299,8 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                 Currency= BusinessPartner.moneda or None
             )
         )
-        res_partner = session.execute(stmt)
-        session.commit()
+        res_partner = sessionx.execute(stmt)
+        sessionx.commit()
         rowsAffected = res_partner.rowcount
         # print(rowsAffected)
         if(rowsAffected > 0): #VERIFICA QUE REGISTRA SOCIO PARA REGISTRAR CONTACTOS Y CUENTAS
@@ -312,13 +318,13 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                                 creationDate=create_date["lima_bd_format"] or None,
                         )
                     )
-                    res_contact = session.execute(stmt1)
+                    res_contact = sessionx.execute(stmt1)
                     if (res_contact.rowcount > 0):
                         print(f"Grabo contacto {contact.nombre}") 
                     else:
                         returnedValue.update({"message": "Error al intentar grabar contactos"})
                         break
-                session.commit()
+                sessionx.commit()
             else:
                 print("No registra contactos")
 
@@ -336,18 +342,18 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
                             AccountHolder=bankAccount.titular,
                         )
                     )
-                    res_account = session.execute(stmt2)
+                    res_account = sessionx.execute(stmt2)
                     if (res_account.rowcount > 0):
                         print(f"Grabo cuenta bancaria de cci {bankAccount.n_cci}") 
                     else:
                         returnedValue.update({"message": "Error al intentar grabar dato bancario"})
                         break
-                session.commit()
+                sessionx.commit()
             else:
                 print("No registra cuenta bancaria")
             
             #RETORNAR SOCIO CREADO
-            value = await Get_All_Business_Partners_By_Param(CardCode=defineCardCode)
+            value = await Get_All_Business_Partners_By_Param(CardCode=defineCardCode, sessionx=sessionx)
             returnedValue.update({"body": value})
 
         else:
@@ -355,19 +361,23 @@ async def Create_New_Business_Partner(BusinessPartner: BusinessPartner, jwt_depe
             returnedValue.update({"message": "Error al registrar socio"})
 
     except Exception as e:
-        session.rollback()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
         returnedValue.update({"message": f"An error ocurred: {e}"})
         status_code=422,
-    finally:
-        session.close()
-        return JSONResponse(
-            status_code= status_code[0] if isinstance(status_code, tuple) else status_code,
-            content=returnedValue
-        )
+
+    return JSONResponse(
+        status_code= status_code[0] if isinstance(status_code, tuple) else status_code,
+        content=returnedValue
+    )
 
 @company_route.get("/ubigeos/", status_code=200)
-async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None, jwt_dependency: jwt_dependecy = None):
+async def Get_Ubigeo_From_Root(
+    departamento_id:str=None, 
+    provincia_id:str=None, 
+    jwt_dependency: jwt_dependecy = None,
+    sessionx:Session=Depends(get_db)
+    ):
 # async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None):
     #root1: padre departamento
     #root2: padre provincia
@@ -375,13 +385,13 @@ async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None, 
     returned = []
     try:
         if (departamento_id is not None) and (provincia_id is None): #consulta provincias
-            results = session.query(Ubigeo.c.pro_id, Ubigeo.c.pro_name) \
+            results = sessionx.query(Ubigeo.c.pro_id, Ubigeo.c.pro_name) \
             .filter(Ubigeo.c.dep_id == departamento_id) \
             .group_by(Ubigeo.c.pro_id, Ubigeo.c.pro_name) \
             .order_by(Ubigeo.c.pro_id.asc()) \
             .all()
         elif (departamento_id is not None) and (provincia_id is not None): #consulta distritos
-            results = session.query(Ubigeo.c.dis_id, Ubigeo.c.dis_name) \
+            results = sessionx.query(Ubigeo.c.dis_id, Ubigeo.c.dis_name) \
             .filter(Ubigeo.c.dep_id == departamento_id) \
             .filter(Ubigeo.c.pro_id == provincia_id) \
             .group_by(Ubigeo.c.dis_id, Ubigeo.c.dis_name) \
@@ -391,15 +401,17 @@ async def Get_Ubigeo_From_Root(departamento_id:str=None, provincia_id:str=None, 
             results = []
         returned = list(map(get_ubigeos_format, results))
     except Exception as e:
-        session.rollback()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
         return []
-    finally:
-        session.close()
-        return returned
+
+    return returned
 
 @company_route.get("/get_partner_data_from_sunat_reniec/", status_code=200)
-async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', jwt_dependency: jwt_dependecy = None, client: httpx.AsyncClient = Depends(get_http_client)):
+async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
+                                      jwt_dependency: jwt_dependecy = None, 
+                                      client: httpx.AsyncClient = Depends(get_http_client),
+                                      sessionx:Session=Depends(get_db)):
     """IMPORTANTE, ༼ つ ◕_◕ ༽つ DEBE SER EL MISMO FORMATO SI CAMBIA DE PROVEEDOR VVVV \n
     CUANDO NO EXISTE UBIGEO, RETORNA '-'
     """
@@ -414,7 +426,7 @@ async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
         response, status_code = await get_partner_by_ruc_dni(client=client, params=params, tdocument=tDocument)
         
         if 'ubigeo' in response: #realiza consulta a backend genesis
-            result = session.query(Ubigeo.c.dep_name, Ubigeo.c.pro_name, Ubigeo.c.dis_name). \
+            result = sessionx.query(Ubigeo.c.dep_name, Ubigeo.c.pro_name, Ubigeo.c.dis_name). \
             filter(func.concat(Ubigeo.c.dep_id,Ubigeo.c.pro_id,Ubigeo.c.dis_id) == response["ubigeo"]).\
             first()
             if(result) and isinstance(response, dict):
@@ -433,20 +445,24 @@ async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
         if response is not None:
             returned = response , status_code
     except Exception as e:
-        session.rollback()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
-    finally:
-        session.close()
-        return JSONResponse(
-        status_code=returned[1],
-        content={
-            "response": returned[0],
+    
+    return JSONResponse(
+    status_code=returned[1],
+    content={
+        "response": returned[0],
         }
     )
 
 
 @company_route.get("/get_all_business_partners", status_code=200)
-async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=None, jwt_dependency: jwt_dependecy = None):
+async def Get_All_Business_Partners_By_Param(
+    CardType:str=None, 
+    CardCode:str=None, 
+    jwt_dependency: jwt_dependecy = None,
+    sessionx:Session=Depends(get_db)
+    ):
     """🚨Consulta sin parametros(todos los partners con 1 contacto) genera file .json en servidor backend"""
     #ACEPTARA PARAMETROS, C Y S: DONDE C es customer y S es Supplier
     returned = []
@@ -461,7 +477,7 @@ async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=Non
                     .where(Company.c.active == 1)
                     .order_by(asc(Company.c.docName))
                 )
-                results = session.execute(stmt).mappings().all() #obtine en formato diccionario
+                results = sessionx.execute(stmt).mappings().all() #obtine en formato diccionario
                 returned = list(map(get_all_companies,results))
 
             else: #si es None, trae todo los resultados
@@ -476,7 +492,7 @@ async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=Non
                     .where(Company.c.active == 1)
                     .order_by(asc(Company.c.docName))
                 )
-                results = session.execute(stmt).mappings().all() #obtine en formato diccionario
+                results = sessionx.execute(stmt).mappings().all() #obtine en formato diccionario
                 returned = list(map(get_all_companies,results))
                 utc_time = await Get_Time()
                 returned = {"last_sync": utc_time["lima"], "partners" : returned}
@@ -492,18 +508,16 @@ async def Get_All_Business_Partners_By_Param(CardType:str=None, CardCode:str=Non
                 .join(Ubigeo, Company.c.idUbigeo == Ubigeo.c.idUbigeo, isouter=True)
                 .where(Company.c.cardCode == CardCode)
             )
-            socio = session.execute(stmt).mappings().first() #obtine en formato diccionario
+            socio = sessionx.execute(stmt).mappings().first() #obtine en formato diccionario
             value = list(map(get_all_companies, [socio] if (socio is not None) and not(isinstance(socio, list)) else []))
             returned = value[0] if len(value) else {}
 
     except Exception as e:
-        print("rollback")
-        session.rollback()
+        sessionx.rollback()
         print(f"An error ocurred: {e}")
         returned = []
-    finally:
-        session.close()
-        return returned
+
+    return returned
     
 @company_route.get("/lastchanges", status_code=200)
 async def Get_Last_Company(
@@ -537,7 +551,3 @@ async def Get_Last_Company(
         sessionx.rollback()
         print(f"An error ocurred: {e}")
         return {}
-        # returned = {}
-    # finally:
-    #     session.close()
-    #     return returned

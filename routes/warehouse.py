@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import JSONResponse
+# from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select, text
 from utils.validate_jwt import jwt_dependecy
@@ -15,10 +15,10 @@ warehouse_route = APIRouter(
 )
 
 @warehouse_route.get("/", status_code=200)
-def get_ware_house(session: Session = Depends(get_db)):
+def get_ware_house(sessionx: Session = Depends(get_db)):
     returned = False
     try:
-        data = session.query(Ware.c.id, 
+        data = sessionx.query(Ware.c.id, 
                              Ware.c.code, 
                              Ware.c.isVirtual, 
                              Ware.c.enabled, 
@@ -43,7 +43,7 @@ def get_ware_house(session: Session = Depends(get_db)):
         returned = {"result": result}
 
     except SQLAlchemyError as e: # Primero la específica
-        session.rollback()
+        sessionx.rollback()
         print(f"SQLAlchemy Error: {e}")
         returned = {"result": [], "error": "Database error"}
     except Exception as e: # Luego la general
