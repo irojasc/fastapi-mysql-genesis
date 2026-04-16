@@ -25,7 +25,7 @@ from functions.sales import generar_ticket, build_body_ticket, generar_ticket_cl
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
-from config.db import MIFACT_MIRUC, get_db, SessionLocal
+from config.db import MIFACT_MIRUC, get_db, SessionLocal, get_http_client
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
@@ -38,16 +38,6 @@ sales_route = APIRouter(
     prefix = '/sales',
     tags=['Sales']
 )
-
-
-# Esta función actúa como un "puente"
-# def get_http_client() -> httpx.AsyncClient:
-# def get_http_client(request: Request) -> httpx.AsyncClient:
-#     return request.app.state.http_client
-
-def get_http_client():
-    with httpx.Client() as client: # Cliente síncrono
-        yield client
 
 
 @sales_route.post("/open_cash_register/", status_code=201)
@@ -318,7 +308,8 @@ def Get_Sales_Order_By_Ware_And_Date(
                     .order_by(desc(SalesOrder.c.DocDate))
                     )
 
-            returned_value = [dict(r) for r in sessionx.execute(stmt).mappings().all()]
+            ventas_reporte = sessionx.execute(stmt).mappings().all()
+            returned_value = [dict(r) for r in ventas_reporte]
 
             returned_value = build_sales_response(returned_value)
             
@@ -581,7 +572,8 @@ def Get_Cash_Register_By_Param(
 # async def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , 
 def Obtiene_Detalle_Orden_Venta(body: external_document = Depends() , 
                                       payload: jwt_dependecy=None, 
-                                      client: httpx.AsyncClient = Depends(get_http_client),
+                                    #   client: httpx.AsyncClient = Depends(get_http_client),
+                                      client: httpx.Client = Depends(get_http_client),
                                       sessionx: Session = Depends(get_db)
                                       ):
     status_code = 422
@@ -1093,7 +1085,8 @@ def Close_Cash_Register(cash_register_body: cash_register,
 def Crear_Documento_Externo_De_Venta(body=sales_order, 
                                            series=series_internal_def, 
                                            payload: jwt_dependecy = None, 
-                                           client: httpx.AsyncClient = Depends(get_http_client),
+                                        #    client: httpx.AsyncClient = Depends(get_http_client),
+                                           client: httpx.Client = Depends(get_http_client),
                                            sessionx: Session = Depends(get_db)
                                            ):
 
@@ -1622,7 +1615,8 @@ def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document,
 # async def Crear_Orden_Venta(body:sales_order, 
 def Crear_Orden_Venta(body:sales_order, 
                             payload: jwt_dependecy, 
-                            client: httpx.AsyncClient = Depends(get_http_client),
+                            # client: httpx.AsyncClient = Depends(get_http_client),
+                            client: httpx.Client = Depends(get_http_client),
                             sessionx:Session=Depends(get_db)
                             ):
     #ABSORVE URL
@@ -1826,7 +1820,8 @@ def Crear_Orden_Venta(body:sales_order,
 def Cancelar_Orden_De_Venta(
     body:sales_order_for_cancel, 
     payload: jwt_dependecy, 
-    client: httpx.AsyncClient = Depends(get_http_client),
+    # client: httpx.AsyncClient = Depends(get_http_client),
+    client: httpx.Client = Depends(get_http_client),
     sessionx: Session = Depends(get_db)
     ):
 
