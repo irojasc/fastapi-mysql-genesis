@@ -4,7 +4,7 @@ import httpx
 # tDocument: Tipo de documento, puede ser ruc o dni
 # async def get_partner_by_ruc_dni(client: httpx.AsyncClient = None, params=None, tdocument=None):
 # def get_partner_by_ruc_dni(client: httpx.AsyncClient = None, params=None, tdocument=None):
-def get_partner_by_ruc_dni(client: httpx.Client = None, params=None, tdocument=None):
+def get_partner_by_ruc_dni_service(client: httpx.Client = None, params=None, tdocument=None):
     agent = 'sunat' if tdocument == 'ruc' else 'reniec' if tdocument == 'dni' else ''
     if params:
         try:

@@ -1,5 +1,6 @@
 from sqlalchemy import Table, Column, text, Text
 from sqlalchemy.sql.sqltypes import Integer, String, Date, _Binary, DECIMAL, DateTime
+from sqlalchemy.dialects.mysql import DATETIME
 from config.db import meta, engine
 
 Product = Table("product", meta, 
@@ -37,5 +38,6 @@ Product = Table("product", meta,
                 Column("slug", String(75, collation="utf8mb4_unicode_ci"), nullable=True, unique=True, default=None),
                 Column("metatitle", String(120, collation="utf8mb4_unicode_ci"), nullable=True),
                 Column("metadesc", String(240, collation="utf8mb4_unicode_ci"), nullable=True),
+                Column("seoeditdate", DATETIME(fsp=3), nullable=True)
                 )
 meta.create_all(bind=engine)

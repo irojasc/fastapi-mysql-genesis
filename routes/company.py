@@ -16,7 +16,7 @@ from basemodel.company import BusinessPartner
 from sqlmodel.ubigeo import Ubigeo
 from functions.company import get_all_companies, get_ubigeos_format, get_company_foredit
 from functions.catalogs import normalize_last_sync
-from service.company import get_partner_by_ruc_dni # consume servicio de reniec o sunat
+from service.company import get_partner_by_ruc_dni_service # consume servicio de reniec o sunat
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
 from datetime import datetime
@@ -409,12 +409,11 @@ def Get_Ubigeo_From_Root(
     return returned
 
 @company_route.get("/get_partner_data_from_sunat_reniec/", status_code=200)
-# async def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
 def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc', 
                                       jwt_dependency: jwt_dependecy = None, 
-                                    #   client: httpx.AsyncClient = Depends(get_http_client),
                                       client: httpx.Client = Depends(get_http_client),
-                                      sessionx:Session=Depends(get_db)):
+                                      sessionx:Session=Depends(get_db)
+                                      ):
     """IMPORTANTE, ༼ つ ◕_◕ ༽つ DEBE SER EL MISMO FORMATO SI CAMBIA DE PROVEEDOR VVVV \n
     CUANDO NO EXISTE UBIGEO, RETORNA '-'
     """
@@ -422,11 +421,12 @@ def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc',
     #RUC:... {"razon_social":"", "numero_documento":"", "estado":"", "condicion":"", "direccion":"", "ubigeo":"", "via_tipo":"","via_nombre":"", "zona_codigo":"",
     #"zona_tipo":"", "numero":"", "interior":"", "lote":"", "dpto":"", "manzana":"", "kilometro":"", "distrito":"", "provincia":"", "departamento":"", "es_agente_retencion":true}
     returned = {}, 422
+
     try:
         params = {
             "numero": nDocument
         }
-        response, status_code = get_partner_by_ruc_dni(client=client, params=params, tdocument=tDocument)
+        response, status_code = get_partner_by_ruc_dni_service(client=client, params=params, tdocument=tDocument)
         
         if 'ubigeo' in response: #realiza consulta a backend genesis
             result = sessionx.query(Ubigeo.c.dep_name, Ubigeo.c.pro_name, Ubigeo.c.dis_name). \
@@ -436,8 +436,15 @@ def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc',
                 response.update({"distrito_gene": result[2]})
                 response.update({"provincia_gene": result[1]})
                 response.update({"departamento_gene": result[0]})
-                response.update({"distrito_opciones_gene": Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2], provincia_id=response["ubigeo"][2:4])}) # consulta distrito
-                response.update({"provincia_opciones_gene": Get_Ubigeo_From_Root(departamento_id=response["ubigeo"][:2])}) #consulta provincia
+                response.update({"distrito_opciones_gene": Get_Ubigeo_From_Root(
+                                    departamento_id=response["ubigeo"][:2], 
+                                    provincia_id=response["ubigeo"][2:4],
+                                    sessionx=sessionx
+                                )}) # consulta distrito
+                response.update({"provincia_opciones_gene": Get_Ubigeo_From_Root(
+                                    departamento_id=response["ubigeo"][:2],
+                                    sessionx=sessionx
+                                    )}) #consulta provincia
             else:
                 response.update({"distrito_gene": None})
                 response.update({"provincia_gene": None})
@@ -447,6 +454,7 @@ def Get_Partner_Data_By_Ruc_Dni(nDocument:str=None, tDocument:str= 'ruc',
             
         if response is not None:
             returned = response , status_code
+
     except Exception as e:
         sessionx.rollback()
         print(f"An error ocurred: {e}")
