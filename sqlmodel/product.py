@@ -35,5 +35,7 @@ Product = Table("product", meta,
                 Column("VatSell", String(2), default=None), #impuesto venta
                 Column("FileName", String(50), nullable=True, default=None), #nombre del archivo de imagen
                 Column("slug", String(75, collation="utf8mb4_unicode_ci"), nullable=True, unique=True, default=None),
+                Column("metatitle", String(120, collation="utf8mb4_unicode_ci"), nullable=True),
+                Column("metadesc", String(240, collation="utf8mb4_unicode_ci"), nullable=True),
                 )
 meta.create_all(bind=engine)

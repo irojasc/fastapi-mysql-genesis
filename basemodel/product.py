@@ -59,6 +59,10 @@ class ware_product_(BaseModel):
     InvntryUom: Optional[str] =  'NIU'
     VatBuy: Optional[str] = None
     VatSell: Optional[str] = None
+    Slug: Optional[str] = None
+    MetaTitle: Optional[str] = None
+    MetaDesc: Optional[str] = None
+
 
     @validator('content')
     def clean_content(cls, v):

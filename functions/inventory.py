@@ -300,4 +300,34 @@ def makeSelectedCategories(lines = [], cat_by_id = {}):
     except Exception as e:
         return [], False
     
+
+def validateWebFields(webWareExists=None, camposWeb=(None, None, None), idProduct= None, isbnProduct=None):
+    def agregar_id_slug(id: int = None, slug:str = ''):
+        return slug + "-" +  str(id)
+
+    slug = camposWeb[0]
+    metatitle = camposWeb[1]
+    metadesc = camposWeb[2]
+    isbn = isbnProduct
+
+    if webWareExists and (not(slug) or not(metatitle) or not(metadesc)):
+        return False, "Debe registrar los 3 MetaDatos si activa almacen WEB", None
+    
+    if not(webWareExists) and (slug or metatitle or metadesc):
+        return False, "Active almacen WEB para poder registrar los 3 MetaDatos", None
+    
+    if webWareExists and slug and metatitle and metadesc: #Registra slug siempre y cuando se cumpla los tres campos
+        slug_final = agregar_id_slug(idProduct, slug) if slug is not None and not(isbn) else slug
+        
+        return True, "OK!", slug_final
+    
+    if not(webWareExists) and not(slug) and not(metatitle) and not(metadesc):
+
+        return True, "OK!", slug
+    
+    return False, 'Error', None
+    
+
+
+    
                         

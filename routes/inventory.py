@@ -20,7 +20,7 @@ from sqlmodel.categories import Categories
 from sqlmodel.uom import UOM
 from sqlmodel.company import Company
 from functions.catalogs import normalize_last_sync
-from functions.inventory import get_all_inventory_data, get_all_active_transfer, sync_product_languages, makeSelectedCategories, sync_product_categories
+from functions.inventory import get_all_inventory_data, get_all_active_transfer, sync_product_languages, makeSelectedCategories, sync_product_categories, validateWebFields
 from basemodel.inventory import InOut_Qty, WareProduct
 from basemodel.product import ware_product_
 from basemodel.ware import ware_edited
@@ -210,7 +210,7 @@ def Get_WareHouse_Product_By_Id(
                 'BuyItem': 'N', 'InvntryUom': 'NIU',
                 'UOMS': uoms, 'Pur_Taxes': pur_taxes, 'Sel_Taxes': sel_taxes,
                 'waredata': waredata, 'isDelete': False, 'formDate': '',
-                'VatBuy': None, 'VatSell': None
+                'VatBuy': None, 'VatSell': None, 'Slug': None, 'MetaTitle': None, 'MetaDesc':None
             }
 
         
@@ -319,7 +319,10 @@ def Get_WareHouse_Product_By_Id(
                 'Sel_Taxes': sel_taxes,
                 'waredata': waredata,
                 'isDelete': binary2bool(product["isDelete"]) if product["isDelete"] is not None else False,
-                'formDate': ''
+                'formDate': '',
+                'Slug': product["slug"] or None,
+                'MetaTitle': product["metatitle"] or None,
+                'MetaDesc': product["metadesc"] or None
             }
 
         return JSONResponse(content={"success": True, "message": "Todo ok!", "object": body}, status_code=200)
@@ -806,9 +809,9 @@ def downgrade_transfer_state(invoice: InOut_Qty = False,
 @inventory_route.patch("/product/", status_code=200)
 # async def update_warehouse_product(
 def update_warehouse_product(
-                                    product_: ware_product_ = None, 
-                                    jwt_dependency: jwt_dependecy = None,
-                                    sessionx:Session=Depends(get_db)
+                                product_: ware_product_ = None, 
+                                jwt_dependency: jwt_dependecy = None,
+                                sessionx:Session=Depends(get_db)
                                    ):
     try:
         try:
@@ -849,7 +852,6 @@ def update_warehouse_product(
 
         #FALTA 🚨🚨🚨🚨 FALTA QUE NO DESABILITE CON PRODUCTOS EN TRANSITO NI GIRADOS EN DOCUMENTOS
         
-
         if bool(len(ware_not_enabled)):
             
             #obtiene stock de ware not enabled
@@ -860,6 +862,37 @@ def update_warehouse_product(
             ##IMPORTANTE, CUANDO stock_checked is None, entonces es por que solo se esta creando data en almacen, pero no se esta activando
             stock_checked = stock_checked if stock_checked is not None else 0
         
+        #### MANEJO DEL SLUG
+        #verifica si llega slug y ya tiene rechace
+        slug_db = sessionx.query(Product.c.slug, Product.c.metatitle). \
+                        filter(Product.c.id == idProduct). \
+                        first()
+        
+        
+        slug_definitivo = product_.Slug
+        metatitle_definitivo = product_.MetaTitle
+
+        # falta la parte de agregar el id cuando no tiene isbn
+        #1| no tiene slug y llega valido -> GRABA , 
+        # if slug_db and slug_db[0] is None and slug_definitivo:
+        if slug_db and slug_db[0] is None and slug_db[1] is None: #no debe existe slug ni metatitle para continuar
+
+            web_ware = next((obj for obj in product_.waredata if obj.wareCode == 'WEB'), None) #verifica si existe el campo web
+            
+            #FUNCION DE ABAJO VALIDA QUE NO SE CREE CAMPOS WEB SI NO ESTA ACTIVADO DICHO ALMACEN
+            state, msg, slug_final = validateWebFields(webWareExists=bool(web_ware), 
+                                                    camposWeb=(slug_definitivo,
+                                                               metatitle_definitivo,
+                                                               product_.MetaDesc), 
+                                                    idProduct = idProduct,
+                                                    isbnProduct= product_.isbn) #campos web (slug, metatitle, metadesc)
+            if not(state):
+                raise Exception(msg)
+
+        # si hay valor y llega cualquier valor diferente, error, ya eixiste slug creado
+        if (slug_db) and ((slug_db[0] is not None and slug_db[0] != slug_definitivo) or ((slug_db[1] is not None and slug_db[1] != metatitle_definitivo))):
+            raise Exception("El slug o metatitle ya existe ¡No puede modificar!")
+
         if stock_checked < 1:
             # trae idIitem apartir de itemCode
             scalarIdItem = sessionx.query(Item.c.id).filter(Item.c.code == product_.idItem).scalar()
@@ -896,7 +929,10 @@ def update_warehouse_product(
                             BuyItem=product_.BuyItem,
                             InvntryUom=product_.InvntryUom,
                             VatBuy=product_.VatBuy,
-                            VatSell=product_.VatSell
+                            VatSell=product_.VatSell,
+                            slug=slug_definitivo or None,
+                            metatitle=metatitle_definitivo or None,
+                            metadesc=product_.MetaDesc or None
                         )
                     )
             
@@ -1011,7 +1047,6 @@ def create_warehouse_product(
         return None  # Si no encuentra la clave, devuelve None
     
     try:
-        
         #OBTIENE ID CONSECUTIVO
         last_id = sessionx.execute(
                     select(Product.c.id)
@@ -1020,6 +1055,19 @@ def create_warehouse_product(
                     .with_for_update() #congela la fila para evitar colision con otros registros
                     ).scalar_one_or_none()
         idProduct = (last_id or 0) + 1
+
+        #AGREGA ID a SLUG Y VERIFICA EXISTENCIA
+        
+        web_ware = next((obj for obj in product_.waredata if obj.wareCode == 'WEB'), None) #verifica si existe el campo web
+        
+        #FUNCION DE ABAJO VALIDA QUE NO SE CREE CAMPOS WEB SI NO ESTA ACTIVADO DICHO ALMACEN
+        state, msg, slug_final = validateWebFields(webWareExists=bool(web_ware), 
+                                                   camposWeb=(product_.Slug, product_.MetaTitle, product_.MetaDesc), #revisa los tres campos web
+                                                   idProduct = idProduct,
+                                                   isbnProduct= product_.isbn) #campos web (slug, metatitle, metadesc)
+
+        if not(state):
+            raise Exception(msg)
 
         # trae idIitem apartir de itemCode
         scalarIdItem = sessionx.query(Item.c.id).filter(Item.c.code == product_.idItem).scalar()
@@ -1030,7 +1078,6 @@ def create_warehouse_product(
 
         #HORA DE REGISTRO
         create_date = Get_Time()
-
 
         stmt = insert(Product).values(
             id=idProduct,
@@ -1058,7 +1105,10 @@ def create_warehouse_product(
             BuyItem=product_.BuyItem,
             InvntryUom=product_.InvntryUom,
             VatBuy=product_.VatBuy,
-            VatSell=product_.VatSell
+            VatSell=product_.VatSell,
+            slug=slug_final or None,
+            metatitle=product_.MetaTitle,
+            metadesc=product_.MetaDesc
         )
 
         result = sessionx.execute(stmt)
@@ -1132,7 +1182,7 @@ def create_warehouse_product(
             return JSONResponse(content=jsonable_encoder(content), status_code=200)
         
     
-    except IntegrityError:
+    except IntegrityError as e:
         sessionx.rollback()
         content = {
             "success": False,
