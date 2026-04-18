@@ -526,7 +526,7 @@ def confirmar_archivo_de_producto(
         
         target_name = new_fileName["FileName"] if new_fileName else 'error'
 
-        utc, utc_format, now_lima = obtenerTiempo()
+        utc, utc_format, now_lima = obtenerTiempo() #<----- actualiza tiempo de seo cuando actualiza imagen
 
         stmt_update = (
             update(Product)
