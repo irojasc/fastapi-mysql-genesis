@@ -85,3 +85,14 @@ def group_categories_by_family(categories: List[Dict[str, Any]]) -> List[List[Di
             families.append(family)
 
     return families
+
+
+def obtenerTiempo():
+    now_utc = datetime.now(timezone.utc)
+
+    # Hora de Lima (UTC-5)
+    lima_tz = pytz.timezone("America/Lima")
+    now_lima = now_utc.astimezone(lima_tz)
+
+    return now_utc, now_utc.isoformat(), now_lima
+

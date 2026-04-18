@@ -35,7 +35,6 @@ class ware_product_(BaseModel):
     title: str
     autor: str
     publisher: Optional[str] = None
-    # content: Optional[str] = None
     content: Optional[str] = Field(None, max_length=1200)
     dateOut: Optional[str] = None
     idCategory: Optional[List[Dict]] = Field(default_factory=list)

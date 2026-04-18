@@ -6,7 +6,7 @@ from sqlmodel.oafv import OAFV
 from sqlmodel.language import Language
 from sqlmodel.categories import Categories
 from utils.validate_jwt import jwt_dependecy
-from functions.catalogs import group_categories_by_family
+from functions.catalogs import group_categories_by_family, obtenerTiempo
 from config.db import get_db
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -20,16 +20,13 @@ catalog_route = APIRouter(
 @catalog_route.get("/time")
 # async def Get_Time(jwt_dependency: jwt_dependecy = None):
 def Get_Time(jwt_dependency: jwt_dependecy = None):
-    # Hora UTC
-    now_utc = datetime.now(timezone.utc)
 
-    # Hora de Lima (UTC-5)
-    lima_tz = pytz.timezone("America/Lima")
-    now_lima = now_utc.astimezone(lima_tz)
+    # Hora UTC
+    utc, utc_format, now_lima = obtenerTiempo()
 
     # Retornar como diccionario (JSON)
     return {
-        "utc": now_utc.isoformat(),
+        "utc": utc_format,
         "lima": now_lima.isoformat(),
         "lima_bd_format": now_lima.strftime("%Y-%m-%d %H:%M:%S"),
         "lima_transfer_format": now_lima.strftime("%Y-%m-%d")

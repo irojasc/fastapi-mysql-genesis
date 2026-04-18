@@ -1,4 +1,4 @@
-import datetime
+from functions.catalogs import obtenerTiempo
 from sqlalchemy import select, delete, insert, update
 from sqlalchemy.orm import Session
 
@@ -305,27 +305,83 @@ def validateWebFields(webWareExists=None, camposWeb=(None, None, None), idProduc
     def agregar_id_slug(id: int = None, slug:str = ''):
         return slug + "-" +  str(id)
 
+    
     slug = camposWeb[0]
     metatitle = camposWeb[1]
     metadesc = camposWeb[2]
     isbn = isbnProduct
+    seoedidate = None
 
     if webWareExists and (not(slug) or not(metatitle) or not(metadesc)):
-        return False, "Debe registrar los 3 MetaDatos si activa almacen WEB", None
+        return False, "Debe registrar los 3 MetaDatos si activa almacen WEB", None, None
     
     if not(webWareExists) and (slug or metatitle or metadesc):
-        return False, "Active almacen WEB para poder registrar los 3 MetaDatos", None
+        return False, "Active almacen WEB para poder registrar los 3 MetaDatos", None, None
     
     if webWareExists and slug and metatitle and metadesc: #Registra slug siempre y cuando se cumpla los tres campos
         slug_final = agregar_id_slug(idProduct, slug) if slug is not None and not(isbn) else slug
+
+        utc, utc_format, now_lima = obtenerTiempo()
         
-        return True, "OK!", slug_final
+        return True, "OK!", slug_final, utc #<- el tiempo cuando se agrega el slug
     
     if not(webWareExists) and not(slug) and not(metatitle) and not(metadesc):
 
-        return True, "OK!", slug
+        return True, "OK!", slug, None
     
-    return False, 'Error', None
+    return False, 'Error', None, None
+
+
+def validateSEOFielChanged(seodateedit=None, incomingData=None, currentData=None, new_langs_ids=[], current_langs_ids=[]):
+
+    try:
+        #CAMPOS QUE SE CONDIERAN NECESARIOS PARA REPORTAR LA ACTUALIZACION EN EL SLUG
+        SEO_FIELDS = {
+                "autor",
+                "content",
+                "cover",
+                "dateOut",
+                "height",
+                "idItem",
+                "isbn",
+                "large",
+                "MetaDesc",
+                "MetaTitle",
+                "pages",
+                "publisher",
+                "Slug",
+                "title",
+                "weight",
+                "width",
+                      }
+        
+        # 2. Creamos la "copia útil": solo llaves que están en nuestra lista blanca
+        update_date = {k: v for k, v in incomingData.items() if k in SEO_FIELDS}
+
+        seo_changed = False
+
+        # 3. Comparar conjuntos
+        if new_langs_ids != current_langs_ids:
+            seo_changed = True
+
+        # 3. Iterar y comparar
+        for key, value in update_date.items():
+            current_value = getattr(currentData, key)
+            # Si el valor es diferente al que ya tenemos en DB
+            if current_value != value:
+                # Si el campo que cambió está en nuestra lista SEO, activamos la bandera
+                if key in SEO_FIELDS:
+                    seo_changed = True
+
+        if seo_changed:
+            utc, utc_format, now_lima = obtenerTiempo()
+            seodateedit = utc
+
+        return seodateedit, seo_changed
+    
+    except Exception as e:
+        print(f"""{e}""")
+        return seodateedit, False
     
 
 

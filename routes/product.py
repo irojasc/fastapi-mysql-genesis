@@ -13,6 +13,7 @@ from sqlmodel.uploads import Uploads
 from sqlmodel.objectfiles import ObjectFiles
 from sqlmodel.ware_product import Ware_Product
 from sqlmodel.user_perm_mdl import User_perm_mdl
+from functions.catalogs import obtenerTiempo
 # from functions.product import get_all_publishers, generate_filename
 from functions.product import generate_filename
 from google.oauth2.service_account import Credentials
@@ -525,6 +526,8 @@ def confirmar_archivo_de_producto(
         
         target_name = new_fileName["FileName"] if new_fileName else 'error'
 
+        utc, utc_format, now_lima = obtenerTiempo()
+
         stmt_update = (
             update(Product)
             .where(
@@ -533,7 +536,8 @@ def confirmar_archivo_de_producto(
             .values(
                 # FileName= 'error' if not new_fileName else new_fileName["FileName"],
                 FileName= target_name,
-                editDate=current_time
+                editDate=current_time,
+                seoeditdate=utc
             )
         )
         result = sessionx.execute(stmt_update)
@@ -542,6 +546,7 @@ def confirmar_archivo_de_producto(
             # sessionx.rollback()
             returned_value.update({"message": "Error durante actualizacion de dato FileName en tabla maestra ITEM"})
             raise ValueError("Error al actualizar FileName en tabla maestra ITEM")
+        
         
         sessionx.commit()
 

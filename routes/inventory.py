@@ -20,7 +20,7 @@ from sqlmodel.categories import Categories
 from sqlmodel.uom import UOM
 from sqlmodel.company import Company
 from functions.catalogs import normalize_last_sync
-from functions.inventory import get_all_inventory_data, get_all_active_transfer, sync_product_languages, makeSelectedCategories, sync_product_categories, validateWebFields
+from functions.inventory import get_all_inventory_data, get_all_active_transfer, sync_product_languages, makeSelectedCategories, sync_product_categories, validateWebFields, validateSEOFielChanged
 from basemodel.inventory import InOut_Qty, WareProduct
 from basemodel.product import ware_product_
 from basemodel.ware import ware_edited
@@ -844,6 +844,7 @@ def update_warehouse_product(
                             order_by(Ware.c.id.asc()). \
                             all()
         dict_exits_ware_codes = dict(exits_ware_codes)
+
         
 
         ##aqui valida que no desabilite ware con stock positivo
@@ -875,12 +876,16 @@ def update_warehouse_product(
         # falta la parte de agregar el id cuando no tiene isbn
         #1| no tiene slug y llega valido -> GRABA , 
         # if slug_db and slug_db[0] is None and slug_definitivo:
+        
+        seoeditdate = None #define valor por defecto para seoeditdate
+
+        slug_final = slug_definitivo
         if slug_db and slug_db[0] is None and slug_db[1] is None: #no debe existe slug ni metatitle para continuar
 
             web_ware = next((obj for obj in product_.waredata if obj.wareCode == 'WEB'), None) #verifica si existe el campo web
             
             #FUNCION DE ABAJO VALIDA QUE NO SE CREE CAMPOS WEB SI NO ESTA ACTIVADO DICHO ALMACEN
-            state, msg, slug_final = validateWebFields(webWareExists=bool(web_ware), 
+            state, msg, slug_final, seoeditdate = validateWebFields(webWareExists=bool(web_ware), 
                                                     camposWeb=(slug_definitivo,
                                                                metatitle_definitivo,
                                                                product_.MetaDesc), 
@@ -893,6 +898,55 @@ def update_warehouse_product(
         if (slug_db) and ((slug_db[0] is not None and slug_db[0] != slug_definitivo) or ((slug_db[1] is not None and slug_db[1] != metatitle_definitivo))):
             raise Exception("El slug o metatitle ya existe ¡No puede modificar!")
 
+        elif (slug_db) and ((slug_db[0] is not None and slug_db[0] == slug_definitivo) or ((slug_db[1] is not None and slug_db[1] == metatitle_definitivo))):
+            #solo si tiene slug y metatitle se procede hacer la actualizacion de seoeditdate 🎃 <- BASTA CON SLUG DE ARRIBA PARA QUE ESTA PARTE NO SE EJECUTE
+            #1| Obtenemos campos originales
+            db_product = sessionx.query(
+                Product.c.autor,
+                Product.c.content,
+                Product.c.cover,
+                Product.c.dateOut.label("dateOut"),
+                Product.c.height,
+                Product.c.idLanguage,
+                Item.c.code.label("idItem"),
+                Product.c.isbn,
+                Product.c.large,
+                Product.c.metadesc.label("MetaDesc"),
+                Product.c.metatitle.label("MetaTitle"),
+                Product.c.pages,
+                Product.c.publisher,
+                Product.c.slug.label("Slug"),
+                Product.c.title,
+                Product.c.weight,
+                Product.c.width,
+                )\
+                .join(Item, Product.c.idItem == Item.c.id)\
+                .filter(Product.c.id == idProduct).first()
+            
+            # NO SE ESTA CONSIDERANDO PRECIOS, STOCK NI CATEGORIAS 🎃🎃🎃🎃🎃🎃
+            if not db_product:
+                raise Exception("Producto no encontrado para actualizacion de tiempo seo")
+            
+            #3| obtenemos datos recibidos en el cuerpo
+            update_data = product_.model_dump(exclude_unset=True)
+            
+            #obtiene ids de languages
+            new_langs_ids=[]
+            current_langs_ids=[]
+            if "idLanguage" in update_data:
+                new_langs_ids = {item['idLang'] for item in update_data.pop("idLanguage")}
+                
+                current_relations = sessionx.query(ProductLanguage.c.idLanguage)\
+                                .filter(ProductLanguage.c.idProduct == idProduct).all()
+                current_langs_ids = {r[0] for r in current_relations}
+
+            seoeditdate, isChanged = validateSEOFielChanged(seodateedit=seoeditdate, 
+                                                            incomingData=update_data, 
+                                                            currentData=db_product, 
+                                                            new_langs_ids=new_langs_ids,
+                                                            current_langs_ids=current_langs_ids
+                                                            )
+
         if stock_checked < 1:
             # trae idIitem apartir de itemCode
             scalarIdItem = sessionx.query(Item.c.id).filter(Item.c.code == product_.idItem).scalar()
@@ -902,37 +956,45 @@ def update_warehouse_product(
             #HORA DE ACTUALIZACION
             create_date = Get_Time()
 
+
+            update_values = {
+                "idItem": scalarIdItem,
+                "isbn": product_.isbn,
+                "title": product_.title,
+                "autor": product_.autor,
+                "publisher": product_.publisher,
+                "content": product_.content,
+                "dateOut": datetime.strptime(product_.dateOut, '%Y-%m-%d').date() if product_.dateOut else None,
+                "idLanguage": None,
+                "pages": product_.pages,
+                "weight": product_.weight,
+                "cover": b'\x01' if bool(product_.cover) else b'\x00' if product_.cover is not None else None,
+                "width": product_.width,
+                "height": product_.height,
+                "editDate": create_date["lima_bd_format"] or None,
+                "large": product_.large,
+                "wholesale": b'\x01' if bool(product_.wholesale) else None,
+                "antique": b'\x01' if bool(product_.antique) else None,
+                "atWebProm": b'\x01' if bool(product_.atWebProm) else None,
+                "CardCode": product_.CardCode,
+                "InvntItem": product_.InvntItem,
+                "SellItem": product_.SellItem,
+                "BuyItem": product_.BuyItem,
+                "InvntryUom": product_.InvntryUom,
+                "VatBuy": product_.VatBuy,
+                "VatSell": product_.VatSell,
+                "slug": slug_final or None,
+                "metatitle": metatitle_definitivo or None,
+                "metadesc": product_.MetaDesc or None,
+            }
+
+            if seoeditdate is not None:
+                update_values["seoeditdate"] = seoeditdate
+
             stmt = (update(Product)
                     .where(Product.c.id == idProduct)
                     .values(
-                            idItem= scalarIdItem,
-                            isbn=product_.isbn,
-                            title=product_.title,
-                            autor=product_.autor,
-                            publisher=product_.publisher,
-                            content=product_.content,
-                            dateOut=datetime.strptime(product_.dateOut, '%Y-%m-%d').date() if product_.dateOut is not None else None,
-                            idLanguage=None, #se mantiene para no romper estructura frond UI
-                            pages=product_.pages,
-                            weight=product_.weight,
-                            cover=None if product_.cover is None else b'\x01' if bool(product_.cover) else b'\x00',
-                            width=product_.width,
-                            height=product_.height,
-                            editDate=create_date["lima_bd_format"] or None,
-                            large=product_.large,
-                            wholesale=b'\x01' if bool(product_.wholesale) else None,
-                            antique=b'\x01' if bool(product_.antique) else None,
-                            atWebProm=b'\x01' if bool(product_.atWebProm) else None,
-                            CardCode=product_.CardCode,
-                            InvntItem=product_.InvntItem,
-                            SellItem=product_.SellItem,
-                            BuyItem=product_.BuyItem,
-                            InvntryUom=product_.InvntryUom,
-                            VatBuy=product_.VatBuy,
-                            VatSell=product_.VatSell,
-                            slug=slug_definitivo or None,
-                            metatitle=metatitle_definitivo or None,
-                            metadesc=product_.MetaDesc or None
+                        **update_values
                         )
                     )
             
@@ -1061,7 +1123,7 @@ def create_warehouse_product(
         web_ware = next((obj for obj in product_.waredata if obj.wareCode == 'WEB'), None) #verifica si existe el campo web
         
         #FUNCION DE ABAJO VALIDA QUE NO SE CREE CAMPOS WEB SI NO ESTA ACTIVADO DICHO ALMACEN
-        state, msg, slug_final = validateWebFields(webWareExists=bool(web_ware), 
+        state, msg, slug_final, seoeditdate = validateWebFields(webWareExists=bool(web_ware), 
                                                    camposWeb=(product_.Slug, product_.MetaTitle, product_.MetaDesc), #revisa los tres campos web
                                                    idProduct = idProduct,
                                                    isbnProduct= product_.isbn) #campos web (slug, metatitle, metadesc)
@@ -1108,7 +1170,8 @@ def create_warehouse_product(
             VatSell=product_.VatSell,
             slug=slug_final or None,
             metatitle=product_.MetaTitle,
-            metadesc=product_.MetaDesc
+            metadesc=product_.MetaDesc,
+            seoeditdate=seoeditdate
         )
 
         result = sessionx.execute(stmt)
