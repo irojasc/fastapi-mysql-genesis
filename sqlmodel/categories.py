@@ -2,6 +2,7 @@ from sqlalchemy import (
     Table, Column, Integer, String, SmallInteger,
     ForeignKey, text
 )
+from sqlalchemy.dialects.mysql import DATETIME
 from config.db import meta, engine
 
 Categories = Table( "Categories", 
@@ -28,5 +29,6 @@ Categories = Table( "Categories",
 
                     Column("MetaTitle", String(255), nullable=True),
                     Column("MetaDesc", String(255), nullable=True),
+                    Column("seoeditdate", DATETIME(fsp=3), nullable=True),
                 )
 meta.create_all(bind=engine)

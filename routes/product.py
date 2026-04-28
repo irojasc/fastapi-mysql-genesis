@@ -547,7 +547,6 @@ def confirmar_archivo_de_producto(
             returned_value.update({"message": "Error durante actualizacion de dato FileName en tabla maestra ITEM"})
             raise ValueError("Error al actualizar FileName en tabla maestra ITEM")
         
-        
         sessionx.commit()
 
         #3| ELIMINA VERSION ANTIGUA DE BUCKET SI EXISTE
