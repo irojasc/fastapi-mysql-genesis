@@ -1689,7 +1689,6 @@ def Crear_Orden_Venta(body:sales_order,
 
                 #CREA DOCUMENTO NUBEFACT
                 if body.doc_tipo in ('FAC', 'BOL'):
-
                     response = Crear_Documento_Externo_De_Venta(client=client, 
                                                                        body=body, 
                                                                        series=series, 
@@ -1709,7 +1708,6 @@ def Crear_Orden_Venta(body:sales_order,
                     data = {}
                 
                 if status_code_doc == 201: #verifica si creo documento externo
-                
                     #CREA DOCUMENTO INTERNO
                     response = Crear_Documento_Interno_De_Venta(body=body, 
                                                                        series=series, 
