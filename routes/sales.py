@@ -1236,14 +1236,25 @@ def Crear_Documento_Externo_De_Venta(body=sales_order,
             boleta_json.update(doctype_f) # <- AGREGA TIPO DOCUMENTO
             boleta_json.update(serie_f) # <- AGREGA SERIE
             boleta_json.update({"items": items}) # <- AGREGA ITEMS
-            boleta_json.update({"datos_adicionales": [ # <- ESTO SE TIENE QUE ARREGLAR PARA FORMA DE PAGO
+
+            # 1. Gestion de datos adicionales
+            datos_adicionales = [
                 {
                     "COD_TIP_ADIC_SUNAT": "01",
                     "TXT_DESC_ADIC_SUNAT": str(pymntgroup_name["forma_pago_nombre"]).upper()
                 }
-            ]})
+            ]
 
+            if body.comentario:
+                datos_adicionales.append({
+                    "COD_TIP_ADIC_SUNAT": "05",
+                    "TXT_DESC_ADIC_SUNAT": str(body.comentario)
+                })
 
+            boleta_json.update({
+                "datos_adicionales": datos_adicionales
+            })
+                
             print(json.dumps(boleta_json, indent=4, ensure_ascii=False))
 
             #SE PROCEDE A GRABAR EL CUERPO EN MI FACT
@@ -1613,7 +1624,7 @@ def Obtener_PDF_Nota_Venta_Por_DocEntry(body:external_document,
 
 @sales_route.post("/create_sales_order/", status_code=201)
 # async def Crear_Orden_Venta(body:sales_order, 
-def Crear_Orden_Venta(body:sales_order, 
+def Crear_Orden_Venta(body:sales_order,
                             payload: jwt_dependecy, 
                             # client: httpx.AsyncClient = Depends(get_http_client),
                             client: httpx.Client = Depends(get_http_client),

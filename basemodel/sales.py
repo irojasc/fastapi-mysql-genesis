@@ -82,6 +82,7 @@ class sales_order(BaseModel):
     forma_pago: str #referencia a pago efectivo, tarjeta , etc.
     id_ware: int
     items: List[item]
+    comentario: Optional[str] = None
 
 
 class Item_Ticket(BaseModel):
