@@ -1,10 +1,11 @@
-from sqlalchemy import select, update, case, and_
+from sqlalchemy import select, update, case, and_, text
 from datetime import datetime
 from service.order_flow_config import obtener_config
 from functions.sales import formatear_pedido
 
 
 from sqlmodel.checkoutattempts import CheckoutAttempts
+# from sqlalchemy import select, asc, func, insert, and_, desc, text, update, case, or_, extract
 from sqlmodel.orderflowsteps import OrderFlowSteps
 from sqlmodel.ware import Ware
 from sqlmodel.ubigeo import Ubigeo
@@ -233,6 +234,13 @@ class OrderFlowService:
         return respuesta
     
     def _consultar_pedido_respuesta(self, docnum):
+        department = text("""
+            CONVERT(
+                JSON_UNQUOTE(
+                    JSON_EXTRACT(checkoutattempts.ShippingPayload,'$.department')
+                )
+            USING latin1)
+            """)
         stmt = select(  CheckoutAttempts.c.DocNum.label("num"), #numero de pedido
                         CheckoutAttempts.c.CreateDate.label("registro"), #fecha creacion de registro
                         CheckoutAttempts.c.DateApproved.label("pago"), #fecha de pago
@@ -255,7 +263,6 @@ class OrderFlowService:
                                         CheckoutAttempts.c.ShipType == OrderFlowSteps.c.ShipType )
                     ).join(
                         Ware,
-                        # CheckoutAttempts.c.ShippingPayload['wareCode'].as_string() == Ware.c.id,
                         CheckoutAttempts.c.idWare == Ware.c.id,
                         isouter=True # Usamos LEFT JOIN (isouter=True) por si algún registro no tiene wareCode o no existe
                     ).join(
@@ -263,7 +270,7 @@ class OrderFlowService:
                         Ubigeo,
                         and_(
                         CheckoutAttempts.c.ShipType == 'DELIVERY',
-                        CheckoutAttempts.c.ShippingPayload['department'].as_string() == Ubigeo.c.dep_id,
+                        department == Ubigeo.c.dep_id,
                         Ubigeo.c.pro_id == '01', #<-- forzamos esta condicion
                         Ubigeo.c.dis_id == '01' #<-- forzamos esta condicion
                         ),
