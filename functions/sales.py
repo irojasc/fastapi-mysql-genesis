@@ -12,6 +12,8 @@ from basemodel.sales import Body_Ticket, Item_Ticket
 from service.sales import check_sales_document_status
 from decimal import Decimal
 from config.db import MIFACT_MIRUC
+from service.order_flow_config import pasos_aprobacion
+from datetime import timedelta, datetime as dt
 import io
 import base64
 import asyncio
@@ -675,4 +677,90 @@ def sincronizar_documentos_pendientes(client: httpx.Client = None, docList: list
 
     finally:
         return returned_data
+    
+
+def formatear_pedido(pedido: dict) -> dict:
+
+    def formatear_fecha(datx, es_pago=False):
+
+        if not datx:
+            return ""
+
+        objeto_dt = None
+
+        if isinstance(datx, dt):
+            objeto_dt = datx
+
+        elif isinstance(datx, str):
+            try:
+                dt_limpio = datx.split('.')[0]
+                objeto_dt = dt.strptime(dt_limpio, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return datx
+
+        if objeto_dt and es_pago:
+            objeto_dt = objeto_dt - timedelta(hours=5)
+
+        return objeto_dt.strftime("%d/%m %H:%M") if objeto_dt else ""
+
+
+    fecha_registro = formatear_fecha(pedido.get("registro"))
+    fecha_pago = formatear_fecha(pedido.get("pago"), es_pago=True)
+    fecha_entrega = formatear_fecha(pedido.get("entrega"))
+
+    payload = pedido.get("ShippingPayload") or {}
+
+    apellido = str(payload.get("apellido", "")).strip()
+    nombre = str(payload.get("nombre", "")).strip()
+    documento = str(payload.get("documento", "")).strip()
+
+    if apellido or nombre:
+        cliente_str = f"{apellido}, {nombre} - {documento}".upper()
+    else:
+        cliente_str = f"CLIENTE DESCONOCIDO - {documento}".upper()
+
+    total_val = pedido.get("total")
+    total_str = "{:.2f}".format(float(total_val)) if total_val is not None else "0.00"
+
+    ShipType = pedido.get("ShipType")
+    StepOrder = pedido.get("StepOrder")
+
+    return {
+        "cabecera": {},
+        "detalle": {
+
+            "num": str(pedido.get("num", "")),
+
+            "fechas": {
+                "registro": fecha_registro,
+                "pago": fecha_pago,
+                "entrega": fecha_entrega
+            },
+
+            "cliente": cliente_str,
+
+            "m_pago": str(pedido.get("m_pago", "")).upper(),
+
+            "total": total_str,
+
+            "t_entrega": str(pedido.get("destino", "")).upper(),
+
+            "almacen": str(pedido.get("wareCode") or ""),
+
+            "usuario": {
+                "preparado": str(pedido.get("preparado") or ""),
+                "entregado": str(pedido.get("entregado") or "")
+            },
+
+            "cur_operation": {
+                "cur_id": str(StepOrder),
+                "btn_name": pasos_aprobacion.get(ShipType, {}).get(str(StepOrder), {}).get("btn_txt"),
+                "btn_color": pasos_aprobacion.get(ShipType, {}).get(str(StepOrder), {}).get("btn_color"),
+                "accion": pasos_aprobacion.get(ShipType, {}).get(str(StepOrder), {}).get("accion"),
+                "isFinal": pasos_aprobacion.get(ShipType, {}).get(str(StepOrder), {}).get("isFinal"),
+                "shiptype": ShipType
+            }
+
+        }
+    }
 

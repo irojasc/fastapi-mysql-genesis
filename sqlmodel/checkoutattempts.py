@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index
 )
+from sqlalchemy.sql.sqltypes import Integer
 from sqlalchemy.dialects.mysql import CHAR, JSON, TINYINT, TIMESTAMP
 
 metadata = MetaData()
@@ -42,6 +43,7 @@ CheckoutAttempts = Table(
     Column('PreparingAt', DateTime, nullable=True),
     Column('HandedOverBy', String(15), nullable=True),
     Column('HandedOverAt', DateTime, nullable=True),
+    Column('idWare', Integer, nullable=True),
 
     # Claves Foráneas (Foreign Keys)
     ForeignKeyConstraint(

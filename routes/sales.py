@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select, asc, func, insert, and_, desc, text, update, case, or_
+from sqlalchemy import select, asc, func, insert, and_, desc, text, update, case, or_, extract
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlmodel.cashregister import CashRegister
 from sqlmodel.docseries import DocSeries
@@ -14,12 +14,16 @@ from sqlmodel.doctype import DocType
 from sqlmodel.company import Company
 from sqlmodel.companycontacts import CompanyContacts
 from sqlmodel.pymntgroup import PymntGroup
+from sqlmodel.checkoutattempts import CheckoutAttempts
+from sqlmodel.orderflowsteps import OrderFlowSteps
 from sqlmodel.product import Product
+from sqlmodel.ware import Ware
+from sqlmodel.ubigeo import Ubigeo
 from sqlmodel.odtc import ODTC
 from sqlmodel.oafv import OAFV
 from basemodel.sales import (cash_register, sales_order, Body_Ticket, 
 Body_Ticket_Close, Item_Ticket_Close, sales_request, 
-external_document, sales_order_for_cancel)
+external_document, sales_order_for_cancel, websale_params)
 from basemodel.series import series_internal_def
 from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close, format_to_8digits, sincronizar_documentos_pendientes
 from utils.validate_jwt import jwt_dependecy
@@ -30,6 +34,8 @@ from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
 from service.sales import post_sales_document, cancel_sales_document, check_sales_document_file
+from service.order_flow_service import OrderFlowService
+from service.web_sales_detail_service import WebSaleDetailService
 from sqlalchemy.orm import Session
 import httpx
 import json
@@ -353,8 +359,251 @@ def Get_Sales_Order_By_Ware_And_Date(
         returned_value = []
 
     return returned_value
+
+
+
+@sales_route.get("/get_web_sales_by_filters/", status_code=200)
+def Get_Web_Sales_Order_By_Filters(
+        bodyWeb: sales_request = Depends(), 
+        payload: jwt_dependecy = None,
+        sessionx: Session = Depends(get_db)        
+        ):
+    
+    returned_value = {}
+    date_current = bodyWeb.Date
+
+    pasos_aprobacion = {
+        "DELIVERY": {
+            "1": {"btn_txt": "ATENDER", "accion": "ATENDER", "next_id": 2, "next_name": "NOTIFICAR ENTREGA A COURIER", "isFinal": False, "btn_color": "#28a745"},
+            "2": {"btn_txt": "TERMINAR PREPARACION", "accion": "FINALIZAR Y NOTIFICAR ENTREGA A COURIER", "next_id": 3, "next_name": "EN TRANSITO", "isFinal": False, "btn_color": "#ffc107"},
+            "3": {"btn_txt": "EN TRANSITO", "accion": "EN TRANSITO", "next_id": None, "next_name": "EN TRANSITO", "isFinal": True, "btn_color": "#6c757d"}
+        },
+        "PICKUP": {
+            "1": {"btn_txt": "ATENDER", "accion": "ATENDER", "next_id": 2, "next_name": "FINALIZAR PREPARACION Y NOTIFICAR", "isFinal": False, "btn_color": "#28a745" },
+            "2": {"btn_txt": "TERMINAR PREPARACION", "accion": "FINALIZAR PREPARACION Y NOTIFICAR", "next_id": 3, "next_name": "ENTREGAR", "isFinal": False, "btn_color": "#ffc107"},
+            "3": {"btn_txt": "TERMINAR ENTREGA", "accion": "ENTREGAR", "next_id": 4, "next_name": "ENTREGADO", "isFinal": False, "btn_color": "#ffc107"},
+            "4": {"btn_txt": "ENTREGADO", "accion": "ENTREGADO", "next_id": None, "next_name": "ENTREGADO","isFinal": True, "btn_color": "#6c757d"}
+        }
+    }
+
+    try:
+        
+        #Validacion MODULO NATIVO: SLS
+        permisos = get_user_permissions_by_module(user=payload.get("username"), module='SLS', sessionx=sessionx)
+        
+        if isinstance(permisos, list) and 'SLS_VWB' in permisos: #APRUEBA PERMISO PARA VER PEDIDOS WEB SLS_ASR
+            
+            #FUNCIONA PARA DAR FORMATO CABECERA / DETALLE
+            #IMPORTANTE, EL DATEAPRROVED VIENE DESDE MERCADOPAGO EN HORA UTC
+            #IMPORTANTE, EL CREATEDATE ES MODIFICADO POR PRISMA PARA QUE OBTENGA LA ZONA HORARIO DE LA REGION
+
+            def formatear_pedidos(lista_pedidos: list) -> list:
+                resultados_formateados = []
+                
+                for pedido in lista_pedidos:
+
+                    # 1. Formatear Fechas de manera segura (si son None, devuelve "")
+                    def formatear_fecha(datx, es_pago=False):
+                        if not datx:
+                            return ""
+                        
+                        objeto_dt = None
+                        
+                        # Si ya es un objeto datetime real (lo más común desde SQLAlchemy)
+                        if isinstance(datx, dt):
+                            objeto_dt = datx
+                        
+                        # Si te llega como un string de texto
+                        elif isinstance(datx, str):
+                            try:
+                                dt_limpio = datx.split('.')[0] 
+                                objeto_dt = dt.strptime(dt_limpio, "%Y-%m-%d %H:%M:%S")
+                            except ValueError:
+                                return datx 
+                        
+                        # 🚀 SI ES EL CAMPO DE PAGO: Le restamos las 5 horas de UTC para volver a Hora de Lima
+                        if objeto_dt and es_pago:
+                            objeto_dt = objeto_dt - timedelta(hours=5)
+                            
+                        # Retornamos el formato final que va directo a tu QTableWidget
+                        if objeto_dt:
+                            return objeto_dt.strftime("%d/%m %H:%M")
+                            
+                        return ""
+
+                    fecha_registro = formatear_fecha(pedido.get("registro"))
+                    fecha_pago = formatear_fecha(pedido.get("pago"), es_pago = True)
+                    fecha_entrega = formatear_fecha(pedido.get("entrega"))
+                    
+                    # 2. Construir la cadena del Cliente desde el ShippingPayload
+                    payload = pedido.get("ShippingPayload") or {}
+                    apellido = str(payload.get("apellido", "")).strip()
+                    nombre = str(payload.get("nombre", "")).strip()
+                    documento = str(payload.get("documento", "")).strip()
+                    
+                    # Unimos: APELLIDO, NOMBRE - DOCUMENTO
+                    if apellido or nombre:
+                        cliente_str = f"{apellido}, {nombre} - {documento}".upper()
+                    else:
+                        cliente_str = f"CLIENTE DESCONOCIDO - {documento}".upper()
+                        
+                    # 3. Formatear el Total a 2 decimales strings
+                    total_val = pedido.get("total")
+                    total_str = "{:.2f}".format(float(total_val)) if total_val is not None else "0.00"
+                    
+                    ShipType = pedido.get("ShipType", None)
+                    StepOrder = pedido.get("StepOrder", None)
+
+                    # 4. Armar el nuevo diccionario estructurado
+                    pedido_formateado = {
+                        "num": str(pedido.get("num", "")),
+                        "fechas": {
+                            "registro": fecha_registro,
+                            "pago": fecha_pago,
+                            "entrega": fecha_entrega
+                        },
+                        "cliente": cliente_str,
+                        "m_pago": str(pedido.get("m_pago", "")).upper(),
+                        "total": total_str,
+                        "t_entrega": str(pedido.get("destino", "")).upper(),
+                        "almacen": str(pedido.get("wareCode") or ""), # Si es None pone ""
+                        "usuario": {
+                            "preparado": str(pedido.get("preparado") or ""),
+                            "entregado": str(pedido.get("entregado") or "")
+                        },
+                        "cur_operation": {
+                            "cur_id": str(StepOrder),
+                            "btn_name": pasos_aprobacion.get(ShipType, None).get(str(StepOrder), None).get('btn_txt', None),
+                            "btn_color": pasos_aprobacion.get(ShipType, None).get(str(StepOrder), None).get('btn_color', None),
+                            "accion": pasos_aprobacion.get(ShipType, None).get(str(StepOrder), None).get('accion', None),
+                            "isFinal": pasos_aprobacion.get(ShipType, None).get(str(StepOrder), None).get('isFinal', None),
+                            "shiptype": ShipType
+                        } 
+                    }
+                    
+                    resultados_formateados.append(pedido_formateado)
+                    
+                return {
+                    "cabecera": {},
+                    "detalle": resultados_formateados
+                }
+            
+
+
+            anio_filtro = int(date_current.split('-')[0])
+            mes_filtro = int(date_current.split('-')[1])
+
+                
+            stmt = (select( 
+                            CheckoutAttempts.c.DocNum.label("num"), #numero de pedido
+                            CheckoutAttempts.c.CreateDate.label("registro"), #fecha creacion de registro
+                            CheckoutAttempts.c.DateApproved.label("pago"), #fecha de pago
+                            CheckoutAttempts.c.HandedOverAt.label("entrega"), # fecha de entrega
+                            CheckoutAttempts.c.ShippingPayload, #datos del cliente
+                            CheckoutAttempts.c.MethodId.label("m_pago"), #modo de pago
+                            CheckoutAttempts.c.Amount.label("total"), #Monto total, incluye delivery en caso es para envio
+                            CheckoutAttempts.c.ShipType, #Tipo de entrega
+                            CheckoutAttempts.c.PreparingBy.label("preparado"), #preparado por
+                            CheckoutAttempts.c.HandedOverBy.label("entregado"), #entregado por
+                            OrderFlowSteps.c.StepOrder,
+                            OrderFlowSteps.c.StatusCode,
+                            Ware.c.code.label("wareCode"),
+                            # 1. Aplicamos la lógica condicional con CASE
+                            case(
+                                (CheckoutAttempts.c.ShipType == 'DELIVERY', Ubigeo.c.dep_name),
+                                else_='TIENDA'
+                            ).label("destino")
+                        )
+                    .join(OrderFlowSteps, and_(CheckoutAttempts.c.StepOrder == OrderFlowSteps.c.StepOrder,
+                                               CheckoutAttempts.c.ShipType == OrderFlowSteps.c.ShipType ))
+                    .join(
+                        Ware,
+                        # CheckoutAttempts.c.ShippingPayload['wareCode'].as_string() == Ware.c.id,
+                        CheckoutAttempts.c.idWare == Ware.c.id,
+                        isouter=True # Usamos LEFT JOIN (isouter=True) por si algún registro no tiene wareCode o no existe
+                    )
+                    # 2. Hacemos el LEFT JOIN con Ubigeo SOLO si es DELIVERY
+                    .join(
+                        Ubigeo,
+                        and_(
+                            CheckoutAttempts.c.ShipType == 'DELIVERY',
+                            CheckoutAttempts.c.ShippingPayload['department'].as_string() == Ubigeo.c.dep_id,
+                            Ubigeo.c.pro_id == '01', #<-- forzamos esta condicion
+                            Ubigeo.c.dis_id == '01' #<-- forzamos esta condicion
+                        ),
+                        isouter=True # Obligatorio para que si no es DELIVERY (o no encuentra match) no borre la fila
+                    )
+                    .filter(
+                        extract('year', func.date_sub(CheckoutAttempts.c.DateApproved, text("INTERVAL 5 HOUR"))) == anio_filtro, #se retrocede 5 horas para llegar a hora peruana
+                        extract('month', func.date_sub(CheckoutAttempts.c.DateApproved, text("INTERVAL 5 HOUR"))) == mes_filtro, #se retrocede 5 horas para llegar a hora peruana
+                        CheckoutAttempts.c.DocNum.is_not(None)
+                    )
+                    .order_by(desc(CheckoutAttempts.c.DateApproved))
+                    )
+
+            ventas_reporte = sessionx.execute(stmt).mappings().all()
+
+            #1| revisar si las fechas son utc o lima
+            #se tiene que extraer los datos del almacen
+            #se tiene que extraer los datos de los produtos
+
+            returned_value = [dict(r) for r in ventas_reporte]
+            returned_value = formatear_pedidos(returned_value)
+            
+            returned_value.update({
+                                    "status": True, 
+                                    "message": "ok"
+                                    }
+                                   )
+
+        else:
+            returned_value.update({
+                                    "status": False, 
+                                    "message": "No cuenta con permisos revisar las ventas web", 
+                                    "cabecera": {}, 
+                                    "detalle": [],
+                                    }
+                                )
+
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+        sessionx.rollback()
+        returned_value = []
+
+    except IntegrityError as e:  # errores típicos de FK, UNIQUE, NOT NULL
+        print(f"""Detalle SQLAlchemy: {e.orig}""")
+        sessionx.rollback()
+        returned_value = []
+
+    except SQLAlchemyError as e:  # captura cualquier otro error de SQLAlchemy
+        print("Error SQLAlchemy:", str(e.__dict__["orig"]))  # error original
+        sessionx.rollback()
+        returned_value = []
+
+    return returned_value
     
 
+
+@sales_route.patch("/update_web_sale_state/", status_code=200)
+def Update_Web_Sale_State(  websale_params: websale_params, 
+                            payload: jwt_dependecy = None,
+                            sessionx: Session=Depends(get_db)
+                        ):
+    return OrderFlowService(sessionx).update(websale_params)
+
+
+
+@sales_route.get("/get_web_sale_detail/", status_code=200)
+def Get_Web_Sale_State(  websale_params: websale_params = Depends(), 
+                            payload: jwt_dependecy = None,
+                            sessionx: Session=Depends(get_db)
+                        ):
+    docnum = int(websale_params.DocNum)
+    ware_id = int(websale_params.WareID)
+
+    return WebSaleDetailService(sessionx).get_detail(docnum=docnum, ware_id=ware_id)
+
+    
 
 @sales_route.get("/get_detail_sales_order/", status_code=200)
 # async def Get_Detail_Sales_Order(

@@ -24,10 +24,20 @@ class cash_register(BaseModel):
     code2count: Optional[str] = None
     total2count: Optional[int] = None
 
+class websale_params(BaseModel):
+    WareID: Optional[str] = None #obligatorio
+    DocNum: Optional[str] = None
+    IdState: Optional[str] = None
+    User: Optional[str] = None
+    ShipType: Optional[str] = None
+    NumTrack: Optional[str] = None
+    
+
 class sales_request(BaseModel):
     WareID: Optional[int] = None #obligatorio
     Date: Optional[str] = None #obligatorio
     IdItem: Optional[int] = 2
+    State: Optional[str] = None # <- este campo para reporte web
 
 class external_document(BaseModel):
     DocEntry: Optional[int] = None #obligatorio
