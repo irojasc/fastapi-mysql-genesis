@@ -493,6 +493,14 @@ def Get_Web_Sales_Order_By_Filters(
             anio_filtro = int(date_current.split('-')[0])
             mes_filtro = int(date_current.split('-')[1])
 
+            department = text("""
+            CONVERT(
+                JSON_UNQUOTE(
+                    JSON_EXTRACT(checkoutattempts.ShippingPayload,'$.department')
+                )
+            USING latin1)
+            """)
+
                 
             stmt = (select( 
                             CheckoutAttempts.c.DocNum.label("num"), #numero de pedido
@@ -527,7 +535,8 @@ def Get_Web_Sales_Order_By_Filters(
                         Ubigeo,
                         and_(
                             CheckoutAttempts.c.ShipType == 'DELIVERY',
-                            CheckoutAttempts.c.ShippingPayload['department'].as_string() == Ubigeo.c.dep_id,
+                            # CheckoutAttempts.c.ShippingPayload['department'].as_string() == Ubigeo.c.dep_id,
+                            department == Ubigeo.c.dep_id,
                             Ubigeo.c.pro_id == '01', #<-- forzamos esta condicion
                             Ubigeo.c.dis_id == '01' #<-- forzamos esta condicion
                         ),
