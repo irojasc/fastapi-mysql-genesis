@@ -40,6 +40,11 @@ from sqlalchemy.orm import Session
 import httpx
 import json
 
+import traceback
+import logging
+
+logger = logging.getLogger(__name__)
+
 sales_route = APIRouter(
     prefix = '/sales',
     tags=['Sales']
@@ -1760,8 +1765,13 @@ def Crear_Documento_Interno_De_Venta(body=sales_order,
                                 cant_items += int(item.qty)
                             
                             stmt = (select(Company.c.docName).filter(Company.c.cardCode == body.receptor_cod))
-                            response = sessionx.execute(stmt).mappings().one()
+                            response = sessionx.execute(stmt).mappings().first()
+                            # print("response")
+                            # print(response)
+                            # print("*"*50)
                             #response: {'docName': 'VARIOS'}
+
+                            doc_name_cliente = response["docName"] if response else "VARIOS"
 
                             returnedValue.update({"message": f"Orden de venta aceptada DocEntry: {numero_documento}"})
                             returnedValue.update({"data": {
@@ -1772,7 +1782,8 @@ def Crear_Documento_Interno_De_Venta(body=sales_order,
                                 "total": total.to_eng_string(),
                                 "cant_titulos": cant_productos or 0,
                                 "cant_items": cant_items or 0,
-                                "cliente": response["docName"] or ""
+                                # "cliente": response["docName"] or ""
+                                "cliente": doc_name_cliente
                             }})
                             returnedValue.update({"status_code": 201})
                             sessionx.commit() #AQUI TERMINA TODO CON UN COMMIT 🎭🎭🎭
@@ -1803,6 +1814,9 @@ def Crear_Documento_Interno_De_Venta(body=sales_order,
 
     except Exception as e:
         sessionx.rollback()
+        print("*"*30)
+        print(f" ERROR CRÍTICO EN CREAR_DOCUMENTO_INTERNO: {traceback.format_exc()}")
+        print("*"*30)
         returnedValue.update({"message": f"An error ocurred: {e}"})
         returnedValue.update({"status_code": 422})
         return returnedValue
@@ -1941,9 +1955,10 @@ def Crear_Orden_Venta(body:sales_order,
                     )
 
                 #VERIFICAMOS SI CORRELATIVO LLEGA AL MAXIMO
-                correlativo = format_to_8digits(n=serie["NextNumber"], limit=8) #limite maximo de 8 digitos
+                correlativo_num = serie["NextNumber"]
+                correlativo_str = format_to_8digits(n=correlativo_num, limit=8) #limite maximo de 8 digitos
 
-                if not(bool(correlativo)):
+                if not(bool(correlativo_str)):
                     return JSONResponse(
                         status_code= 422,
                         content= {
@@ -1954,7 +1969,7 @@ def Crear_Orden_Venta(body:sales_order,
                     )
 
                 #CREA PREFIJO Y CORRELATIVO SIGUIENTE
-                series = series_internal_def(Prefix=serie["Prefix"], NextNumber=correlativo) #NextNumber en formato string
+                series = series_internal_def(Prefix=serie["Prefix"], NextNumber=correlativo_str) #NextNumber en formato string
 
                 #CREA DOCUMENTO NUBEFACT
                 if body.doc_tipo in ('FAC', 'BOL'):
@@ -1964,7 +1979,7 @@ def Crear_Orden_Venta(body:sales_order,
                                                                        payload=payload,
                                                                        sessionx=sessionx) #creacion externa
                     status_code_doc = response.get("status_code", 422)
-                    msg = response.get("message", "Error on Sales Route Line 1390")
+                    msg = response.get("message", "Error on Sales Route Line 1967")
                     data = response.get("data", {})
 
                 elif body.doc_tipo in ('NV'):
