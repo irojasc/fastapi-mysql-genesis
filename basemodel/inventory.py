@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, List
 
 class body_list(BaseModel):
     code: str
@@ -32,3 +32,19 @@ class WareProduct(BaseModel):
     editDate: Optional[str] = None
 
     ## ...... falta completar
+
+class ProductStockResponse(BaseModel):
+    id: int
+    cod: str          # 👈 Campo concatenado (ej: "GN_1")
+    isbn: Optional[str] = ""
+    title: str
+    autor: Optional[str] = ""
+    publisher: Optional[str] = ""
+    stock: Dict[str, int]
+    pvp: Dict[str, float]
+    isEnabled: Dict[str, bool]
+
+    
+class InventorySearchResponse(BaseModel):
+    result: List[ProductStockResponse]
+    total: int

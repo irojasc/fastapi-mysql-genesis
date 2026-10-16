@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Depends, HTTPException
+from fastapi import APIRouter, Query, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text, desc, asc, or_, func, and_, null, literal, delete, insert, update
 from fastapi.encoders import jsonable_encoder
@@ -21,7 +21,7 @@ from sqlmodel.uom import UOM
 from sqlmodel.company import Company
 from functions.catalogs import normalize_last_sync
 from functions.inventory import get_all_inventory_data, get_all_active_transfer, sync_product_languages, makeSelectedCategories, sync_product_categories, validateWebFields, validateSEOFielChanged
-from basemodel.inventory import InOut_Qty, WareProduct
+from basemodel.inventory import InOut_Qty, WareProduct, InventorySearchResponse
 from basemodel.product import ware_product_
 from basemodel.ware import ware_edited
 # from routes.company import Get_All_Business_Partners_By_Param
@@ -31,6 +31,10 @@ import json
 from datetime import datetime
 from config.db import get_db
 from sqlalchemy.orm import Session
+from typing import Optional, List, Dict
+import logging
+
+logger = logging.getLogger(__name__)
 
 inventory_route = APIRouter(
     prefix = '/inventory',
@@ -1293,3 +1297,137 @@ def Get_All_Units_Of_Measurement(
     except SQLAlchemyError as e:
         print("An SqlAlchemmy happened ", e)
         return []
+
+
+@inventory_route.get(
+    "/stock_by_product_attribute",
+    status_code=status.HTTP_200_OK,
+    response_model=InventorySearchResponse
+)
+def get_stock_by_product_attribute(
+    query_search: Optional[str] = Query(None, description="Búsqueda general (Código GN_1, ISBN, título, autor)"),
+    page: int = Query(1, ge=1, description="Número de página"),
+    limit: int = Query(10, ge=1, le=100, description="Cantidad de productos por página"),
+    sessionx: Session = Depends(get_db)
+):
+    try:
+            # 1. Definir concatenación de código
+            product_cod = func.concat(Item.c.code, "_", Product.c.id).label("product_cod")
+
+            # 2. Construir los filtros de búsqueda
+            filters = []
+            if query_search and query_search.strip():
+                words = query_search.strip().upper().split()
+                for word in words:
+                    word_term = f"%{word}%"
+                    filters.append(
+                        or_(
+                            product_cod.ilike(word_term),
+                            Product.c.isbn.ilike(word_term),
+                            Product.c.title.ilike(word_term),
+                            Product.c.autor.ilike(word_term),
+                            Product.c.publisher.ilike(word_term)
+                        )
+                    )
+
+            # ---------------------------------------------------------------------
+            # 🟢 CAMBIO 1: Obtener el conteo TOTAL de productos coincidentes
+            # ---------------------------------------------------------------------
+            total_stmt = (
+                select(func.count(func.distinct(Product.c.id)))
+                .select_from(Product)
+                .join(Item, Product.c.idItem == Item.c.id)
+            )
+
+            if filters:
+                total_stmt = total_stmt.where(and_(*filters))
+
+            total_records = sessionx.execute(total_stmt).scalar() or 0
+
+
+            # 3. PASO CLAVE: Obtener ÚNICAMENTE los IDs de Productos Paginados
+            # Hacemos DISTINCT para asegurar que contemos productos únicos
+            id_stmt = (
+                select(Product.c.id)
+                .distinct()
+                .select_from(Product)
+                .join(Item, Product.c.idItem == Item.c.id)
+            )
+
+            if filters:
+                id_stmt = id_stmt.where(and_(*filters))
+
+            offset_value = (page - 1) * limit
+            id_stmt = id_stmt.order_by(Product.c.id.asc()).offset(offset_value).limit(limit)
+
+            # Ejecutamos para obtener la lista exacta de IDs para esta página
+            product_ids = [row[0] for row in sessionx.execute(id_stmt).fetchall()]
+
+            # Si no hay productos en esta página, retornamos directamente
+            if not product_ids:
+                return {
+                    # "page": page,
+                    # "limit": limit,
+                    "total": total_records,
+                    "result": []
+                }
+
+            # 4. PASO FINAL: Traer la información completa y stock de ESOS productos específicos
+            stmt = (
+                select(
+                    Product.c.id.label("id_product"),
+                    product_cod,
+                    Product.c.isbn.label("isbn"),
+                    Product.c.title.label("title"),
+                    Product.c.autor.label("autor"),
+                    Product.c.publisher.label("publisher"),
+                    Ware.c.code.label("ware_code"),
+                    Ware_Product.c.qtyNew.label("stock"),
+                    Ware_Product.c.pvNew.label("pvp"),
+                    Ware_Product.c.isEnabled.label("is_enabled")
+                )
+                .select_from(Ware_Product)
+                .join(Product, Ware_Product.c.idProduct == Product.c.id)
+                .join(Item, Product.c.idItem == Item.c.id)
+                .join(Ware, Ware_Product.c.idWare == Ware.c.id)
+                .where(and_(Ware.c.enabled == 1, Product.c.id.in_(product_ids))) # 👈 Filtramos por los IDs paginados
+                .order_by(Product.c.id.asc())
+            )
+
+            db_results = sessionx.execute(stmt).fetchall()
+
+            # 5. Agrupar resultados por Producto
+            grouped_results: Dict[int, dict] = {}
+            for row in db_results:
+                p_id = row.id_product
+                if p_id not in grouped_results:
+                    grouped_results[p_id] = {
+                        "id": p_id,
+                        "cod": row.product_cod or f"PROD-{p_id}",
+                        "isbn": row.isbn or "",
+                        "title": row.title or "",
+                        "autor": row.autor or "",
+                        "publisher": row.publisher or "",
+                        "isEnabled": {},
+                        "stock": {},
+                        "pvp": {}
+                    }
+
+                w_code = row.ware_code
+                grouped_results[p_id]["isEnabled"][w_code] = row.is_enabled == b'\x01'
+                grouped_results[p_id]["stock"][w_code] = int(row.stock or 0)
+                grouped_results[p_id]["pvp"][w_code] = float(row.pvp or 0.0)
+
+            return {
+                # "page": page,
+                # "limit": limit,
+                "total": total_records,
+                "result": list(grouped_results.values())
+            }
+
+    except Exception as e:
+        sessionx.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno al consultar el catálogo: {str(e)}"
+        )
