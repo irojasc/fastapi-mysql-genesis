@@ -1308,6 +1308,7 @@ def get_stock_by_product_attribute(
     query_search: Optional[str] = Query(None, description="Búsqueda general (Código GN_1, ISBN, título, autor)"),
     page: int = Query(1, ge=1, description="Número de página"),
     limit: int = Query(10, ge=1, le=100, description="Cantidad de productos por página"),
+    jwt_dependency: jwt_dependecy = None,
     sessionx: Session = Depends(get_db)
 ):
     try:
