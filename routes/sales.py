@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends
-from fastapi import Request
+from fastapi import APIRouter, Depends, status, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select, asc, func, insert, and_, desc, text, update, case, or_, extract
@@ -18,18 +17,20 @@ from sqlmodel.checkoutattempts import CheckoutAttempts
 from sqlmodel.orderflowsteps import OrderFlowSteps
 from sqlmodel.product import Product
 from sqlmodel.ware import Ware
+from sqlmodel.ware_product import Ware_Product
 from sqlmodel.ubigeo import Ubigeo
 from sqlmodel.odtc import ODTC
 from sqlmodel.oafv import OAFV
 from basemodel.sales import (cash_register, sales_order, Body_Ticket, 
 Body_Ticket_Close, Item_Ticket_Close, sales_request, 
-external_document, sales_order_for_cancel, websale_params)
+external_document, sales_order_for_cancel, websale_params,
+QuickSaleCreateSchema)
 from basemodel.series import series_internal_def
 from functions.sales import generar_ticket, build_body_ticket, generar_ticket_close, format_to_8digits, sincronizar_documentos_pendientes
 from utils.validate_jwt import jwt_dependecy
 from routes.authorization import get_user_permissions_by_module
 from routes.catalogs import Get_Time
-from config.db import MIFACT_MIRUC, get_db, SessionLocal, get_http_client
+from config.db import MIFACT_MIRUC, get_db, SessionLocal, get_http_client, get_db_postgres
 from datetime import datetime as dt, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
@@ -37,6 +38,8 @@ from service.sales import post_sales_document, cancel_sales_document, check_sale
 from service.order_flow_service import OrderFlowService
 from service.web_sales_detail_service import WebSaleDetailService
 from sqlalchemy.orm import Session
+from models.sales import SalesHeader, SalesDetail
+
 import httpx
 import json
 
@@ -2466,3 +2469,121 @@ def sincronizacion_diaria_madrugada():
                     print(f"Error en la sincronización: {e}")
 
 
+@sales_route.post("/quick-sale", status_code=status.HTTP_201_CREATED)
+def create_quick_sale(
+    payload: QuickSaleCreateSchema,
+    session_pg: Session = Depends(get_db_postgres),
+    sessionx: Session = Depends(get_db),
+    payload_user: jwt_dependecy = None
+):
+    try:
+
+        # -----------------------------------------------------------------
+        # 1. RESOLVER idWare EN MYSQL
+        # -----------------------------------------------------------------
+        ware_id = payload.warehouseId
+
+        if not ware_id:
+            ware = sessionx.query(Ware).filter(Ware.c.code == payload.warehouseCode).first()
+            if not ware:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El almacén con código '{payload.warehouseCode}' no existe en el sistema."
+                )
+            ware_id = ware.id
+
+        # -----------------------------------------------------------------
+        # 2. REGISTRAR VENTA EN POSTGRESQL (Cabecera y Detalle)
+        # -----------------------------------------------------------------
+        c_data = payload.customer
+
+        # 2.1. Crear Cabecera en PostgreSQL
+        new_header = SalesHeader(
+            warehouse_code=payload.warehouseCode,
+            payment_method=payload.paymentMethod,
+            observations=payload.observations,
+            wants_receipt=c_data.wantsReceipt if c_data else False,
+            doc_type=c_data.docType if c_data else None,
+            doc_number=c_data.docNumber if c_data else None,
+            customer_name=c_data.name if c_data else None,
+            customer_phone=c_data.phone if c_data else None,
+            customer_email=c_data.email if c_data else None,
+            total_titles=payload.totalTitles,
+            total_items=payload.totalItems,
+            total_amount=payload.totalAmount
+        )
+
+        session_pg.add(new_header)
+        session_pg.flush() # Genera new_header.id sin confirmar la transacción aún
+
+        # 2. Crear Detalle de Productos
+        for item in payload.items:
+            new_detail = SalesDetail(
+                sales_header_id=new_header.id,
+                product_id=item.id,
+                product_cod=item.cod,
+                isbn=item.isbn,
+                title=item.title,
+                unit_price=item.unitPrice,
+                quantity=item.quantity,
+                subtotal=item.subtotal
+            )
+            session_pg.add(new_detail)
+
+        # 3. Confirmar la Transacción
+        # session_pg.commit()
+        # session_pg.refresh(new_header)
+
+        # -----------------------------------------------------------------
+        # 3. DESCONTAR STOCK EN MYSQL (Ware_Product)
+        # -----------------------------------------------------------------
+        # Hora local oficial de Lima / Perú
+        # lima_now = datetime.now(ZoneInfo("America/Lima")).replace(tzinfo=None)
+        current_time = Get_Time()
+        lima_time = current_time["lima_bd_format"] or None
+
+        for item in payload.items:
+            # Query atómico para restar directamente sobre la base de datos
+            stmt = (
+                sessionx.query(Ware_Product)
+                .filter(
+                    Ware_Product.c.idWare == ware_id,
+                    Ware_Product.c.idProduct == item.id
+                )
+            )
+            
+            row = stmt.first()
+            if not row:
+                raise Exception(
+                    f"El producto '{item.title}' (ID: {item.id}) no tiene registro de stock en el almacén seleccionando."
+                )
+
+            # Actualización directa del registro
+            stmt.update({
+                Ware_Product.c.qtyNew: Ware_Product.c.qtyNew - item.quantity,
+                Ware_Product.c.editDate: lima_time
+            }, synchronize_session=False)
+
+        # -----------------------------------------------------------------
+        # 4. CONFIRMAR TRANSACCIONES EN AMBAS BASES DE DATOS
+        # -----------------------------------------------------------------
+        sessionx.commit()
+        session_pg.commit()
+        session_pg.refresh(new_header)
+
+        return {
+            "status": "success",
+            "message": "Venta e inventario actualizados con éxito",
+            "sale_id": new_header.id,
+            "warehouse_id": ware_id,
+            "timestamp": lima_time
+        }
+
+    except Exception as e:
+        # En caso de error, revierte la transacción en PostgreSQL
+        session_pg.rollback()
+        print("❌ ERROR EN LA VENTA:", str(e))  # Imprime en la consola de uvicorn
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al registrar la venta en PostgreSQL: {str(e)}"
+        )
