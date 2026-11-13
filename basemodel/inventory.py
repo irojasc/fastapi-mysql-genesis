@@ -55,6 +55,7 @@ class ProductStockResponse(BaseModel):
     stock: Dict[str, int]
     pvp: Dict[str, float]
     isEnabled: Dict[str, bool]
+    loc: Dict[str, Optional[str]] = {}  # 👈 AGREGAR ESTA LÍNEA
 
 # 3. Respuesta Flexible
 class InventorySearchResponse(BaseModel):

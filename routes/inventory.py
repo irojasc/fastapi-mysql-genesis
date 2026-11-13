@@ -1403,7 +1403,8 @@ def get_stock_by_product_attribute(
                 Ware.c.code.label("ware_code"),
                 Ware_Product.c.qtyNew.label("stock"),
                 Ware_Product.c.pvNew.label("pvp"),
-                Ware_Product.c.isEnabled.label("is_enabled")
+                Ware_Product.c.isEnabled.label("is_enabled"),
+                Ware_Product.c.loc.label("loc")  # 👈 AGREGAR ESTA LÍNEA
             )
             .select_from(Ware_Product)
             .join(Product, Ware_Product.c.idProduct == Product.c.id)
@@ -1457,13 +1458,15 @@ def get_stock_by_product_attribute(
                     "publisher": row.publisher or "",
                     "isEnabled": {},
                     "stock": {},
-                    "pvp": {}
+                    "pvp": {},
+                    "loc": {}  # 👈 AGREGAR ESTA LÍNEA
                 }
 
             w_code = row.ware_code
             grouped_results[p_id]["isEnabled"][w_code] = (row.is_enabled == b'\x01' or row.is_enabled == True)
             grouped_results[p_id]["stock"][w_code] = int(row.stock or 0)
             grouped_results[p_id]["pvp"][w_code] = float(row.pvp or 0.0)
+            grouped_results[p_id]["loc"][w_code] = row.loc.strip() if row.loc else None  # 👈 AGREGAR ESTA LÍNEA
 
         return {
             "total": total_records,
