@@ -597,16 +597,16 @@ def change_product_location(
         response["state"] = True
         response["message"] = 'Cambios aplicados'
 
+    except SQLAlchemyError as e:
+        sessionx.rollback()
+        response["state"] = False
+        response["message"] = f"An error ocurred: {e}"
+
     except Exception as e:
         sessionx.rollback()
         response["state"] = False
         response["message"] = f"An error ocurred: {e}"
 
-    except SQLAlchemyError as e:
-        sessionx.rollback()
-        response["state"] = False
-        response["message"] = f"An error ocurred: {e}"
-        
     return response
 
 @inventory_route.post("/inventorymode", status_code=200)
